@@ -42,14 +42,12 @@ class DefaultConfig:
     OTS_CA_ORGANIZATIONAL_UNIT = 'OpenTAKServer'
     OTS_CA_SUBJECT = '/C={}/ST={}/L={}/O={}/OU={}'.format(OTS_CA_COUNTRY, OTS_CA_STATE, OTS_CA_CITY,
                                                           OTS_CA_ORGANIZATION, OTS_CA_ORGANIZATIONAL_UNIT)
-    OTS_FIGLET_WIDTH = 100
-    OTS_FIGLET_FONTS = ["slant", "thin", "stampatello", "rectangles", "bell", "doom", "banner", "banner3-D", "banner3",
-                        "mini", "marquee", "big", "chunky", "poison", "pepper", "computer", "puffy", "cosmic", "script",
-                        "sblood", "epic", "speed", "trek", "rev", "larry3d", "3-d", "5lineoblique", "lean", "cursive",
-                        "gothic"]
     # Messages queued in RabbitMQ will auto-delete after 1 day if not consumed https://www.rabbitmq.com/docs/ttl
     # Set to '0' to disable auto-deletion
     OTS_RABBITMQ_TTL = '86400000'
+    # How many CoT messages that cot_parser processes should prefetch. https://www.rabbitmq.com/docs/consumer-prefetch
+    OTS_RABBITMQ_PREFETCH = 2
+    OTS_COT_PARSER_PROCESSES = 1
 
     # See https://docs.python.org/3/library/logging.handlers.html#logging.handlers.TimedRotatingFileHandler
     OTS_LOG_ROTATE_WHEN = 'midnight'
@@ -59,6 +57,8 @@ class DefaultConfig:
     OTS_AIRPLANES_LIVE_LAT = 40.744213
     OTS_AIRPLANES_LIVE_LON = -73.986939
     OTS_AIRPLANES_LIVE_RADIUS = 10
+
+    OTS_ENABLE_PLUGINS = True
 
     # AIS Settings
     OTS_AISHUB_USERNAME = None
@@ -110,7 +110,7 @@ class DefaultConfig:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_RECORD_QUERIES = False
 
-    ALLOWED_EXTENSIONS = ['zip', 'xml', 'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'kml', 'kmz']
+    ALLOWED_EXTENSIONS = ['zip', 'xml', 'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'kml', 'kmz', 'p12']
 
     UPLOAD_FOLDER = os.path.join(OTS_DATA_FOLDER, 'uploads')
     if not os.path.exists(UPLOAD_FOLDER):

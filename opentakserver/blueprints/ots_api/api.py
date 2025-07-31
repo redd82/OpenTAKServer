@@ -4,7 +4,6 @@ import hashlib
 import os
 import platform
 import traceback
-import uuid
 from shutil import copyfile
 
 from urllib.parse import urlparse
@@ -14,8 +13,9 @@ import yaml
 import bleach
 import psutil
 import sqlalchemy.exc
-from flask import current_app as app, request, Blueprint, jsonify, send_from_directory
-from flask_security import auth_required, roles_accepted, current_user, verify_password
+from flask import current_app as app, request, Blueprint, jsonify, send_from_directory, url_for
+from flask_security import auth_required, current_user, verify_password
+from sqlalchemy import select, delete
 
 from opentakserver.extensions import logger, db
 
@@ -24,13 +24,13 @@ from opentakserver.models.CasEvac import CasEvac
 from opentakserver.models.CoT import CoT
 from opentakserver.models.DataPackage import DataPackage
 from opentakserver.models.EUD import EUD
+from opentakserver.models.Token import Token
 from opentakserver.models.ZMIST import ZMIST
 from opentakserver.models.Point import Point
 from opentakserver.models.user import User
 from opentakserver.models.Certificate import Certificate
 from opentakserver.models.APSchedulerJobs import APSchedulerJobs
 
-from opentakserver.SocketServer import SocketServer
 from opentakserver.certificate_authority import CertificateAuthority
 from opentakserver.models.Icon import Icon
 from opentakserver.models.Marker import Marker
@@ -86,19 +86,17 @@ def cloudtak_config():
     return jsonify({'uploadSizeLimit': 400})
 
 
+# Simple health check for docker
 @api_blueprint.route('/api/health')
 def health():
-    if not app.cot_thread.iothread.is_alive():
-        return jsonify({'status': 'down', 'error': 'cot thread is dead'}), 503
-
     return jsonify({'status': 'healthy'})
 
 
 @api_blueprint.route('/api/status')
 @auth_required()
 def status():
-    now = datetime.datetime.now()
-    system_boot_time = datetime.datetime.fromtimestamp(psutil.boot_time())
+    now = datetime.datetime.now(datetime.timezone.utc)
+    system_boot_time = datetime.datetime.fromtimestamp(psutil.boot_time(), datetime.datetime.now().astimezone().tzinfo)
     system_uptime = now - system_boot_time
 
     ots_uptime = now - app.start_time
@@ -122,10 +120,10 @@ def status():
     uname = {'system': platform.system(), 'node': platform.node(), 'release': platform.release(),
              'version': platform.version(), 'machine': platform.machine()}
 
+    online_euds = db.session.execute(select(EUD).filter(EUD.last_status == 'Connected')).all()
+
     response = {
-        'tcp': app.tcp_thread.is_alive(), 'ssl': app.ssl_thread.is_alive(),
-        'cot_router': app.cot_thread.iothread.is_alive(),
-        'online_euds': app.cot_thread.online_euds, 'system_boot_time': system_boot_time.strftime("%Y-%m-%d %H:%M:%SZ"),
+        'online_euds': len(online_euds), 'system_boot_time': system_boot_time.strftime("%Y-%m-%d %H:%M:%SZ"),
         'system_uptime': system_uptime.total_seconds(), 'ots_start_time': app.start_time.strftime("%Y-%m-%d %H:%M:%SZ"),
         'ots_uptime': ots_uptime.total_seconds(), 'cpu_time': cpu_time_dict, 'cpu_percent': p.cpu_percent(),
         'load_avg': psutil.getloadavg(), 'memory': vmem_dict, 'disk_usage': disk_usage_dict, 'ots_version': version,
@@ -133,65 +131,6 @@ def status():
     }
 
     return jsonify(response)
-
-
-@api_blueprint.route('/api/tcp/<action>')
-@roles_accepted('administrator')
-def control_tcp_socket(action):
-    action = bleach.clean(action).lower()
-
-    if action == 'start':
-        if app.tcp_thread.is_alive():
-            return jsonify({'success': False, 'error': 'TCP thread is already active'}), 400
-
-        change_config_setting("OTS_ENABLE_TCP_STREAMING_PORT", True)
-        app.config.update(OTS_ENABLE_TCP_STREAMING_PORT=True)
-
-        tcp_thread = SocketServer(logger, app.app_context(), app.config.get("OTS_TCP_STREAMING_PORT"))
-        tcp_thread.start()
-        app.tcp_thread = tcp_thread
-
-        return jsonify({'success': True})
-
-    elif action == 'stop':
-        if not app.tcp_thread.is_alive():
-            return jsonify({'success': False, 'error': 'TCP thread is not active'}), 400
-
-        change_config_setting("OTS_ENABLE_TCP_STREAMING_PORT", False)
-        app.config.update(OTS_ENABLE_TCP_STREAMING_PORT=False)
-
-        app.tcp_thread.stop()
-        return jsonify({'success': True})
-
-    else:
-        return jsonify({'success': False, 'error': 'Valid actions are start and stop'}), 400
-
-
-@api_blueprint.route('/api/ssl/<action>')
-@roles_accepted('administrator')
-def control_ssl_socket(action):
-    action = bleach.clean(action).lower()
-
-    if action == 'start':
-        if app.ssl_thread.is_alive():
-            return jsonify({'success': False, 'error': 'ssl thread is already active'}), 400
-
-        with app.app_context():
-            ssl_thread = SocketServer(logger, app.app_context(), app.config.get("OTS_SSL_STREAMING_PORT"), True)
-            ssl_thread.start()
-            app.ssl_thread = ssl_thread
-
-            return jsonify({'success': True})
-
-    elif action == 'stop':
-        if not app.ssl_thread.is_alive():
-            return jsonify({'success': False, 'error': 'SSL thread is not active'}), 400
-
-        app.ssl_thread.stop()
-        return jsonify({'success': True})
-
-    else:
-        return jsonify({'success': False, 'error': 'Valid actions are start and stop'}), 400
 
 
 @api_blueprint.route("/api/certificate", methods=['GET', 'POST'])
@@ -223,7 +162,7 @@ def certificate():
                 data_package.filename = filename
                 data_package.keywords = "public"
                 data_package.creator_uid = request.json['uid'] if 'uid' in request.json.keys() else None
-                data_package.submission_time = datetime.datetime.now()
+                data_package.submission_time = datetime.datetime.now(datetime.timezone.utc)
                 data_package.mime_type = "application/x-zip-compressed"
                 data_package.size = os.path.getsize(
                     os.path.join(app.config.get("OTS_CA_FOLDER"), 'certs', username, filename))
@@ -372,17 +311,17 @@ def get_map_state():
             results['euds'].append(eud[0].to_json())
 
         markers = db.session.execute(
-            db.session.query(Marker).join(CoT).filter(CoT.stale >= datetime.datetime.now())).all()
+            db.session.query(Marker).join(CoT).filter(CoT.stale >= datetime.datetime.now(datetime.timezone.utc))).all()
         for marker in markers:
             results['markers'].append(marker[0].to_json())
 
         rb_lines = db.session.execute(
-            db.session.query(RBLine).join(CoT).filter(CoT.stale >= datetime.datetime.now())).all()
+            db.session.query(RBLine).join(CoT).filter(CoT.stale >= datetime.datetime.now(datetime.timezone.utc))).all()
         for rb_line in rb_lines:
             results['rb_lines'].append(rb_line[0].to_json())
 
         casevacs = db.session.execute(
-            db.session.query(CasEvac).join(CoT).filter(CoT.stale >= datetime.datetime.now())).all()
+            db.session.query(CasEvac).join(CoT).filter(CoT.stale >= datetime.datetime.now(datetime.timezone.utc))).all()
         for casevac in casevacs:
             results['casevacs'].append(casevac[0].to_json())
 
@@ -415,22 +354,3 @@ def get_settings():
 def config():
     logger.debug("files/api/config")
     return ''
-
-
-@api_blueprint.route("/oauth/token", methods=['GET', 'POST'])
-def cloudtak_oauth_token():
-    user = app.security.datastore.find_user(username=request.args.get("username"))
-    if not user or not verify_password(request.args.get("password"), user.password):
-        return jsonify({'success': False, 'error': 'Invalid username or password'}), 400
-
-    with open(os.path.join(app.config.get("OTS_CA_FOLDER"), "certs", "opentakserver", "opentakserver.nopass.key"), "rb") as key:
-        token = jwt.encode({
-            "exp": datetime.datetime.now() + datetime.timedelta(days=365),
-            "nbf": datetime.datetime.now(),
-            "iss": "OpenTAKServer",
-            "aud": "OpenTAKServer",
-            "iat": datetime.datetime.now(),
-            "sub": user.username
-        }, key.read(), algorithm="RS256")
-
-        return jsonify({"access_token": token})

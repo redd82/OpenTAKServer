@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 
 from opentakserver.extensions import db
+# Leave this import here
+from opentakserver.models.Token import Token
 from sqlalchemy import String
 from flask_security.models import fsqla_v3 as fsqla
 from sqlalchemy.orm import relationship
@@ -14,6 +16,7 @@ class User(db.Model, fsqla.FsUserMixin):
     data_packages = relationship("DataPackage", back_populates="user")
     certificate = relationship("Certificate", back_populates="user")
     mission_invitations = relationship("MissionInvitation", back_populates="user")
+    tokens = relationship("Token", back_populates="user")
 
     def serialize(self):
         return {

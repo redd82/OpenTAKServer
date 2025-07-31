@@ -8,11 +8,13 @@ from opentakserver.blueprints.ots_api.mediamtx_api import mediamtx_api_blueprint
 from opentakserver.blueprints.ots_api.meshtastic_api import meshtastic_api_blueprint
 from opentakserver.blueprints.ots_api.package_api import packages_blueprint
 from opentakserver.blueprints.ots_api.scheduler_api import scheduler_api_blueprint
+from opentakserver.blueprints.ots_api.token_api import token_api_blueprint
 from opentakserver.blueprints.ots_api.user_api import user_api_blueprint
 from opentakserver.blueprints.ots_api.video_api import video_api_blueprint
 from opentakserver.blueprints.ots_api.mission_api import data_sync_api
 from opentakserver.blueprints.ots_api.group_api import group_api
 from opentakserver.blueprints.ots_api.eud_stats_api import eud_stats_blueprint
+from opentakserver.blueprints.ots_api.plugin_api import plugin_blueprint
 
 ots_api = Blueprint("ots_api", __name__)
 ots_api.register_blueprint(api_blueprint)
@@ -29,3 +31,5 @@ ots_api.register_blueprint(video_api_blueprint)
 ots_api.register_blueprint(data_sync_api)
 ots_api.register_blueprint(group_api)
 ots_api.register_blueprint(eud_stats_blueprint)
+ots_api.register_blueprint(plugin_blueprint)
+ots_api.register_blueprint(token_api_blueprint)

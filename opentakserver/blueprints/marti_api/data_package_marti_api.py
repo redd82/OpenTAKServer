@@ -1,8 +1,9 @@
 import hashlib
+import io
 import os
 import traceback
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 import zipfile
 
@@ -29,7 +30,7 @@ def save_data_package_to_db(filename: str = None, sha256_hash: str = None, mimet
         data_package.hash = sha256_hash
         data_package.creator_uid = request.args.get('creatorUid') if request.args.get('creatorUid') else None
         data_package.submission_user = current_user.id if current_user.is_authenticated else None
-        data_package.submission_time = datetime.now()
+        data_package.submission_time = datetime.now(timezone.utc)
         data_package.mime_type = mimetype
         data_package.size = file_size
         db.session.add(data_package)
@@ -37,34 +38,49 @@ def save_data_package_to_db(filename: str = None, sha256_hash: str = None, mimet
     except sqlalchemy.exc.IntegrityError as e:
         db.session.rollback()
         logger.error("Failed to save data package: {}".format(e))
+        logger.debug(traceback.format_exc())
         return jsonify({'success': False, 'error': 'This data package has already been uploaded'}), 400
 
 
-def create_data_package_zip(file: FileStorage) -> str:
-    filename, extension = os.path.splitext(secure_filename(file.filename))
+def create_data_package_zip(file: FileStorage | str) -> str:
+    if isinstance(file, str):
+        logger.info(secure_filename(os.path.basename(file)))
+        filename, extension = os.path.splitext(secure_filename(os.path.basename(file)))
+        logger.info(f"Got filename {filename}")
+    else:
+        filename, extension = os.path.splitext(secure_filename(file.filename))
+
     zipf = zipfile.ZipFile(os.path.join(app.config.get("UPLOAD_FOLDER"), f"{filename}.zip"), "a", zipfile.ZIP_DEFLATED, False)
 
     # Use the md5 of the uploaded file as its folder name in the data package zip
     md5 = hashlib.md5()
-    md5.update(file.stream.read())
-    file.stream.seek(0)
+    try:
+        md5.update(file.stream.read())
+        file.stream.seek(0)
+    except AttributeError:
+        with open(file, "r") as f:
+            md5.update(f.read().encode())
+
     md5_hash = md5.hexdigest()
 
-    zipf.writestr(f"{md5_hash}/{secure_filename(file.filename)}", file.stream.read())
+    if isinstance(file, str):
+        with open(file, "r") as f:
+            zipf.writestr(f"{md5_hash}/{secure_filename(filename + extension)}", f.read())
+    else:
+        zipf.writestr(f"{md5_hash}/{secure_filename(filename + extension)}", file.stream.read())
 
     # MANIFEST file
     manifest = Element("MissionPackageManifest", {"version": "2"})
     config = SubElement(manifest, "Configuration")
     SubElement(config, "Parameter", {"name": "uid", "value": str(uuid.uuid4())})
-    SubElement(config, "Parameter", {"name": "name", "value": secure_filename(file.filename)})
+    SubElement(config, "Parameter", {"name": "name", "value": secure_filename(filename + extension)})
 
     contents = SubElement(manifest, "Contents")
-    content = SubElement(contents, "Content", {"ignore": "false", "zipEntry": f"{md5_hash}/{secure_filename(file.filename)}"})
+    content = SubElement(contents, "Content", {"ignore": "false", "zipEntry": f"{md5_hash}/{secure_filename(filename + extension)}"})
 
-    filename, extension = os.path.splitext(secure_filename(file.filename))
     extension = extension.lower().replace(".", "")
     if extension == 'kml' or extension == 'kmz':
-        SubElement(content, 'Parameter', {'name': 'name', 'value': secure_filename(file.filename)})
+        SubElement(content, 'Parameter', {'name': 'name', 'value': f"{secure_filename(filename + extension)}"})
         SubElement(content, 'Parameter', {'name': 'contentType', 'value': 'KML'})
         SubElement(content, 'Parameter', {'name': 'visible', 'value': 'true'})
 
@@ -81,7 +97,7 @@ def create_data_package_zip(file: FileStorage) -> str:
     data_package_hash = sha256.hexdigest()
 
     os.rename(os.path.join(app.config.get("UPLOAD_FOLDER"), f"{filename}.zip"), os.path.join(app.config.get("UPLOAD_FOLDER"), f"{data_package_hash}.zip"))
-    save_data_package_to_db(f"{filename}.zip", data_package_hash, file.content_type, len(zip_file_bytes))
+    save_data_package_to_db(f"{filename}.zip", data_package_hash, "application/zip", len(zip_file_bytes))
 
     return data_package_hash
 
@@ -134,8 +150,9 @@ def data_package_share():
 def data_package_metadata(file_hash):
     if request.method == 'PUT':
         try:
-            data_package = db.session.execute(db.select(DataPackage).filter_by(hash=file_hash)).scalar_one()
+            data_package = db.session.execute(db.select(DataPackage).filter_by(hash=file_hash)).first()
             if data_package:
+                data_package = data_package[0]
                 data_package.keywords = bleach.clean(request.data.decode("utf-8"))
                 db.session.add(data_package)
                 db.session.commit()

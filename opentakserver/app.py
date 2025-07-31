@@ -1,11 +1,7 @@
-import eventlet
-
-from opentakserver.sql_jobstore import SQLJobStore
-
-eventlet.monkey_patch()
+from gevent import monkey
+monkey.patch_all()
 
 import random
-
 import sys
 import traceback
 import logging
@@ -18,6 +14,9 @@ import requests
 from sqlalchemy import insert
 import sqlite3
 from opentakserver.models.Icon import Icon
+from opentakserver.plugins.Plugin import Plugin
+from opentakserver.plugins.PluginManager import PluginManager
+from opentakserver.sql_jobstore import SQLJobStore
 
 import yaml
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
@@ -29,7 +28,7 @@ import os
 
 import colorlog
 from werkzeug.middleware.proxy_fix import ProxyFix
-from datetime import datetime
+from datetime import datetime, timezone
 import sqlalchemy
 
 import flask_wtf
@@ -48,10 +47,7 @@ from opentakserver.defaultconfig import DefaultConfig
 from opentakserver.models.WebAuthn import WebAuthn
 
 from opentakserver.controllers.meshtastic_controller import MeshtasticController
-from opentakserver.controllers.cot_controller import CoTController
 from opentakserver.certificate_authority import CertificateAuthority
-from opentakserver.SocketServer import SocketServer
-from pyfiglet import Figlet
 
 try:
     from opentakserver.mumble.mumble_ice_app import MumbleIceDaemon
@@ -63,11 +59,6 @@ def init_extensions(app):
     db.init_app(app)
     Migrate(app, db)
 
-    #from opentakserver.logo import ots_logo
-
-    #f = Figlet(font=random.choice(app.config.get("OTS_FIGLET_FONTS")), justify="center", width=app.config.get("OTS_FIGLET_WIDTH"))
-    #print(ots_logo)
-    #logger.info(f.renderText(f"\nOpenTAKServer {opentakserver.__version__}\n"))
     logger.info(f"OpenTAKServer {opentakserver.__version__}")
     logger.info("Loading the database...")
     with app.app_context():
@@ -112,7 +103,7 @@ def init_extensions(app):
     socketio_logger = False
     if app.config.get("DEBUG"):
         socketio_logger = logger
-    socketio.init_app(app, logger=socketio_logger)
+    socketio.init_app(app, logger=socketio_logger, ping_timeout=1, message_queue="amqp://" + app.config.get("OTS_RABBITMQ_SERVER_ADDRESS"))
 
     rabbit_connection = pika.BlockingConnection(pika.ConnectionParameters(app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")))
     channel = rabbit_connection.channel()
@@ -122,9 +113,6 @@ def init_extensions(app):
     channel.queue_declare(queue='cot_controller')
     channel.exchange_declare(exchange='cot_controller', exchange_type='fanout')
     channel.exchange_declare("missions", durable=True, exchange_type='topic')  # For Data Sync mission feeds
-
-    cot_thread = CoTController(app.app_context(), logger, db, socketio)
-    app.cot_thread = cot_thread
 
     if not apscheduler.running:
         apscheduler.init_app(app)
@@ -187,18 +175,21 @@ def create_app():
                     conf[option] = DefaultConfig.__dict__[option]
             config.write(yaml.safe_dump(conf))
 
-        # Try to set the MediaMTX token
-        if app.config.get("OTS_MEDIAMTX_ENABLE"):
-            try:
-                with open(os.path.join(app.config.get("OTS_DATA_FOLDER"), "mediamtx", "mediamtx.yml"), "r") as mediamtx_config:
-                    conf = mediamtx_config.read()
-                    conf = conf.replace("MTX_TOKEN", app.config.get("OTS_MEDIAMTX_TOKEN"))
+    # Try to set the MediaMTX token
+    if app.config.get("OTS_MEDIAMTX_ENABLE"):
+        try:
+            new_conf = None
+            with open(os.path.join(app.config.get("OTS_DATA_FOLDER"), "mediamtx", "mediamtx.yml"), "r") as mediamtx_config:
+                conf = mediamtx_config.read()
+                if "MTX_TOKEN" in conf:
+                    new_conf = conf.replace("MTX_TOKEN", app.config.get("OTS_MEDIAMTX_TOKEN"))
+            if new_conf:
                 with open(os.path.join(app.config.get("OTS_DATA_FOLDER"), "mediamtx", "mediamtx.yml"), "w") as mediamtx_config:
-                    mediamtx_config.write(conf)
-            except BaseException as e:
-                logger.error("Failed to set MediaMTX token: {}".format(e))
-        else:
-            logger.info("MediaMTX disabled")
+                    mediamtx_config.write(new_conf)
+        except BaseException as e:
+            logger.error("Failed to set MediaMTX token: {}".format(e))
+    else:
+        logger.info("MediaMTX disabled")
 
     init_extensions(app)
 
@@ -291,18 +282,10 @@ def main():
         db.session.commit()
 
     if app.config.get("OTS_ENABLE_MESHTASTIC"):
-        mestastic_thread = MeshtasticController(app.app_context(), logger, db, socketio)
+        mestastic_thread = MeshtasticController(app.app_context())
         app.mestastic_thread = mestastic_thread
     else:
         app.meshtastic_thread = None
-
-    tcp_thread = SocketServer(logger, app.app_context(), app.config.get("OTS_TCP_STREAMING_PORT"))
-    tcp_thread.start()
-    app.tcp_thread = tcp_thread
-
-    ssl_thread = SocketServer(logger, app.app_context(), app.config.get("OTS_SSL_STREAMING_PORT"), True)
-    ssl_thread.start()
-    app.ssl_thread = ssl_thread
 
     if app.config.get("OTS_ENABLE_MUMBLE_AUTHENTICATION"):
         try:
@@ -316,10 +299,24 @@ def main():
     else:
         logger.info("Mumble authentication handler disabled")
 
-    app.start_time = datetime.now()
+    if app.config.get("OTS_ENABLE_PLUGINS"):
+        try:
+            app.plugin_manager = PluginManager(Plugin.group, app)
+            app.plugin_manager.load_plugins()
+            app.plugin_manager.activate(app)
+        except BaseException as e:
+            logger.error(f"Failed to load plugins: {e}")
+            logger.debug(traceback.format_exc())
 
-    socketio.run(app, host=app.config.get("OTS_LISTENER_ADDRESS"), port=app.config.get("OTS_LISTENER_PORT"),
-                 debug=app.config.get("DEBUG"), log_output=app.config.get("DEBUG"), use_reloader=False)
+    app.start_time = datetime.now(timezone.utc)
+
+    try:
+        socketio.run(app, host=app.config.get("OTS_LISTENER_ADDRESS"), port=app.config.get("OTS_LISTENER_PORT"),
+                     debug=app.config.get("DEBUG"), log_output=app.config.get("DEBUG"), use_reloader=False)
+    except KeyboardInterrupt:
+        logger.warning("Caught CTRL+C, exiting...")
+        if app.config.get("OTS_ENABLE_PLUGINS"):
+            app.plugin_manager.stop_plugins()
 
 
 if __name__ == '__main__':

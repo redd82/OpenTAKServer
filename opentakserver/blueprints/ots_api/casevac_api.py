@@ -1,13 +1,11 @@
-from datetime import timedelta
-import json
+from datetime import timedelta, timezone
 from uuid import UUID
 
 import pika
 import sqlalchemy.exc
-from flask import Blueprint, request, jsonify, current_app as app
+from flask import Blueprint, request, jsonify
 from flask_security import auth_required
 from sqlalchemy import insert, update
-from xml.etree.ElementTree import tostring, Element, SubElement
 
 from werkzeug.datastructures import ImmutableMultiDict
 
@@ -141,7 +139,7 @@ def delete_casevac():
 
     casevac = casevac[0]
 
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     event = Element('event', {'how': 'h-g-i-g-o', 'type': 't-x-d-d', 'version': '2.0',
                               'uid': casevac.uid, 'start': iso8601_string_from_datetime(now),
                               'time': iso8601_string_from_datetime(now),

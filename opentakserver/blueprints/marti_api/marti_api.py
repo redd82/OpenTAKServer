@@ -90,11 +90,11 @@ def atak_track_history():
             return jsonify({'success': False, 'error': f"No such UID: {uid}"}), 400
         eud: EUD = eud[0]
 
-        icon = Icon(href=f"files/team_{eud.team.name.lower()}.png")
+        icon = Icon(href=f"files/team_{eud.team.name.lower().replace(' ', '')}.png")
         icon_style = IconStyle(scale=1.0, heading=0.0, icon=icon)
         style = Style(iconstyle=icon_style)
         doc.styles.append(style)
-        kml.addfile(os.path.join(os.path.dirname(os.path.realpath(__file__)), "icons", f"team_{eud.team.name.lower()}.png"))
+        kml.addfile(os.path.join(os.path.dirname(os.path.realpath(__file__)), "icons", f"team_{eud.team.name.lower().replace(' ', '')}.png"))
 
         query = db.session.query(Point)
 

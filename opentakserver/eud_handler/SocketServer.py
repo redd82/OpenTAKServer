@@ -1,15 +1,12 @@
 import os
 import socket
 import ssl
-from threading import Thread
 
-from opentakserver.controllers.client_controller import ClientController
+from opentakserver.eud_handler.client_controller import ClientController
 
 
-class SocketServer(Thread):
+class SocketServer:
     def __init__(self, logger, app_context=None, port=8088, ssl_server=False):
-        super().__init__()
-
         self.logger = logger
         self.port = port
         self.ssl = ssl_server
