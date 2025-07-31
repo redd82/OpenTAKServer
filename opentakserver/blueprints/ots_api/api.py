@@ -228,7 +228,9 @@ def certificate():
                 data_package.size = os.path.getsize(
                     os.path.join(app.config.get("OTS_CA_FOLDER"), 'certs', username, filename))
                 data_package.hash = file_hash
-                data_package.submission_user = current_user.id
+                data_package.submission_user = user.id                
+                logger.info(f"Issuing certificate for user: {username}, user.id: {user.id}")   # TAKAT ADAPTATION
+                #data_package.submission_user = current_user.id
 
                 try:
                     db.session.add(data_package)
@@ -338,7 +340,6 @@ def rabbitmq_auth(path):
     else:
         return 'deny', 200
 
-
 @api_blueprint.route('/api/eud')
 @auth_required()
 def get_euds():
@@ -350,16 +351,13 @@ def get_euds():
     query = search(query, EUD, 'callsign')
     query = search(query, EUD, 'uid')
     query = search(query, User, 'username')
-
     return paginate(query)
-
 
 @api_blueprint.route('/api/truststore')
 def get_truststore():
     filename = f"truststore_root_{urlparse(request.url_root).hostname}.p12"
     return send_from_directory(app.config.get("OTS_CA_FOLDER"), 'truststore-root.p12', download_name=filename,
                                as_attachment=True)
-
 
 @api_blueprint.route('/api/map_state')
 @auth_required()
@@ -392,7 +390,6 @@ def get_map_state():
 
     return jsonify(results)
 
-
 @api_blueprint.route('/api/icon')
 @auth_required()
 def get_icon():
@@ -416,7 +413,6 @@ def config():
     logger.debug("files/api/config")
     return ''
 
-
 @api_blueprint.route("/oauth/token", methods=['GET', 'POST'])
 def cloudtak_oauth_token():
     user = app.security.datastore.find_user(username=request.args.get("username"))
@@ -434,3 +430,19 @@ def cloudtak_oauth_token():
         }, key.read(), algorithm="RS256")
 
         return jsonify({"access_token": token})
+
+# TAKAT additional endpoints
+@api_blueprint.route('/api/usereuds', methods=['POST'])
+@auth_required()
+def get_usereuds():
+    username = bleach.clean(request.json.get('username')) if 'username' in request.json else None
+    query = db.session.query(EUD)
+
+    if username:
+        query = query.join(User, User.id == EUD.user_id)
+        query = query.filter(User.username == username)
+    
+    query = search(query, EUD, 'callsign')
+    query = search(query, EUD, 'uid')
+    query = search(query, User, 'username')
+    return paginate(query)
