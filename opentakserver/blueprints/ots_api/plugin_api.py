@@ -21,6 +21,12 @@ def get_plugins():
     else:
         return jsonify({'success': True, 'plugins': []}), 200
 
+@plugin_blueprint.route("/api/plugins/repo")
+@roles_required("administrator")
+def get_plugin_repo():
+    return jsonify({"success": True, "repo_url": app.config.get("OTS_PLUGIN_REPO")})
+
+
 
 @plugin_blueprint.route("/api/plugins/<plugin_name>", strict_slashes=False)
 @roles_required("administrator")

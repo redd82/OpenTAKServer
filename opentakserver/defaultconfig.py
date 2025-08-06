@@ -59,7 +59,9 @@ class DefaultConfig:
     OTS_AIRPLANES_LIVE_RADIUS = 10
 
     OTS_ENABLE_PLUGINS = True
-
+    OTS_PLUGIN_REPO = "https://repo.opentakserver.io/brian/prod/"
+    OTS_PLUGIN_PREFIXES = ["ots-", "ots_"]
+    
     # AIS Settings
     OTS_AISHUB_USERNAME = None
     OTS_AISHUB_SOUTH_LAT = None
@@ -72,7 +74,9 @@ class DefaultConfig:
     OTS_PROFILE_MAP_SOURCES = True
 
     OTS_ENABLE_MUMBLE_AUTHENTICATION = False
-
+    
+    OTS_IP_WHITELIST = ["127.0.0.1"]
+    
     # Meshtastic settings
     OTS_ENABLE_MESHTASTIC = False
     OTS_MESHTASTIC_TOPIC = "opentakserver"

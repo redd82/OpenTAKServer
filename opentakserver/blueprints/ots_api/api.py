@@ -350,7 +350,3 @@ def get_settings():
     return "OpenTAKServer_{},{},{},SSL".format(url, url, app.config.get("OTS_SSL_STREAMING_PORT"))
 
 
-@api_blueprint.route('/files/api/config', methods=['GET', 'POST', 'PATCH'])
-def config():
-    logger.debug("files/api/config")
-    return ''

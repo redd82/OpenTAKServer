@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import pathlib
 import traceback
 import uuid
 from urllib.parse import urlparse
@@ -278,7 +279,20 @@ def add_update_stream():
         settings = json.loads(video.mediamtx_settings)
 
         for setting in request.json:
-            if setting == 'csrf_token' or setting == 'sourceOnDemand' or setting == 'path' or setting == 'source':
+            if setting == 'csrf_token' or setting == 'sourceOnDemand' or setting == 'path':
+                continue
+
+            # When the source URL is blank set sourceOnDemand to false in order to avoid a MediaMTX error
+            if setting == 'source':
+                source = request.json.get(setting)
+                if not source:
+                    settings["sourceOnDemand"] = False
+                # Run ffmpeg and yt-dlp for live YouTube videos
+                elif "youtube.com" in source or "youtu.be" in source:
+                    settings["source"] = None
+                    settings["sourceOnDemand"] = False
+                    yt_dlp_path = os.path.join(pathlib.Path.home(), ".opentakserver_venv", "bin", "yt-dlp")
+                    settings["runOnDemand"] = f"sh -c 'ffmpeg -re -i \"$({yt_dlp_path} -g {source})\" -c:v copy -f rtsp rtsp://127.0.0.1:8554/$RTSP_PATH'"
                 continue
             key = bleach.clean(setting)
             value = request.json.get(setting)
@@ -346,7 +360,11 @@ def external_auth():
     password = bleach.clean(request.json.get('password'))
     action = bleach.clean(request.json.get('action'))
     query = bleach.clean(request.json.get('query'))
-
+    ip = bleach.clean(request.json.get('ip'))
+    
+    if ip and ip in app.config.get("OTS_IP_WHITELIST"):
+        return '', 200
+    
     # Token auth to prevent high CPU usage when reading HLS streams
     if 'jwt' in query or 'token' in query:
         query = query.split("&")
