@@ -8,7 +8,7 @@ def add_video_object(obj: Video_Object) -> bool:
     Adds a Video_Object to the global list if Camera_UID doesn't already exist.
     Returns True if added, False if a duplicate was found.
     """
-    if get_video_object_by_uid(obj.Camera_UID) is None:
+    if get_video_object_by_uid(obj.UID) is None:
         VIDEO_OBJECTS.append(obj)
         return True
     return False

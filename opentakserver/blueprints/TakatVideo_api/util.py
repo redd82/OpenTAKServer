@@ -89,19 +89,39 @@ class Safe_Link:
             "root": self.Root()
         }
 
-
-class Links_Object:
+class NetworkPaths:
     def __init__(self, LAN: Optional[Safe_Link] = None, INET: Optional[Safe_Link] = None):
-        self.local = LAN if isinstance(LAN, Safe_Link) else Safe_Link()
-        self.external = INET if isinstance(INET, Safe_Link) else Safe_Link()
+        self._lan = LAN if isinstance(LAN, Safe_Link) else Safe_Link()
+        self._inet = INET if isinstance(INET, Safe_Link) else Safe_Link()
     
     def to_dict(self) -> dict[str, dict]:
         return {
-            "local": self.local.to_dict(),
-            "external": self.external.to_dict()
-        }            
+            "lan": self._lan.to_dict(),
+            "inet": self._inet.to_dict()
+        }    
+                  
     def __str__(self) -> str:
-        return f"Local: {self.local} External: {self.external}"
+        return f"Lan: {self._lan} Inet: {self._inet}"
+    
+    @property
+    def Lan(self) -> Safe_Link:
+        return self._lan
+
+    @property
+    def Inet(self) -> Safe_Link:
+        return self._inet
+    
+    def update(self, LAN: Optional[Safe_Link] = None, INET: Optional[Safe_Link] = None) -> None:
+        if LAN is not None:
+            if not isinstance(LAN, Safe_Link):
+                raise TypeError("LAN must be a Safe_Link")
+            self._lan = LAN
+        if INET is not None:
+            if not isinstance(INET, Safe_Link):
+                raise TypeError("INET must be a Safe_Link")
+            self._inet = INET
+    
+    
     
 class Resolutions:
     """A class to manage a list of common video resolutions.
@@ -164,9 +184,15 @@ class Resolutions:
 
     def __len__(self) -> int:
         return len(self._all)
+    
+    def to_dict(self) -> dict[str, List[int]]:
+        """Return all resolutions as a dictionary (name -> resolution)."""
+        return {
+            k: v for k, v in self.__class__.__dict__.items()
+            if not k.startswith("_") and isinstance(v, list)
+        }
 
-
-class OTP:
+class OTP_UID_Manager:
     def __init__(self, uid: Optional[str] = None, otp: Optional[str] = None):
         """
         uid: optional UID string; if not provided, a random UID will be generated
@@ -273,3 +299,11 @@ class OTP:
     def _generate_uid(self) -> str:
         """Internal method to generate a random UID (hex string)."""
         return uuid.uuid4().hex
+    
+    def to_dict(self) -> dict[str, object]:
+        """Return a dictionary representation of the manager."""
+        return {
+            "primary_uid": self.primary_uid,
+            "uids": [{"uid": u, "name": n} for u, n in self._uids],
+            "otp": self._otp,
+        }
