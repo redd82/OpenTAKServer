@@ -1,0 +1,32 @@
+{
+    "venvPath": "/home/takusr",
+    "venv": ".opentakserver_venv",
+    "pythonPath": "/home/takusr/.opentakserver_venv/bin/python",
+    "include": [
+        "."
+    ],
+    "exclude": [
+        "**/node_modules",
+        "**/__pycache__",
+        ".git",
+        "/sys",
+        "/proc",
+        "/dev",
+        "/run",
+        "/tmp",
+        "/var",
+        "/usr",
+        "/lib",
+        "/bin",
+        "/sbin",
+        "/boot",
+        "/etc",
+        "/opt"
+    ],
+    "autoSearchPaths": false,
+    "extraPaths": [],
+    "pythonVersion": "3.12",
+    "typeCheckingMode": "basic",
+    "useLibraryCodeForTypes": true,
+    "stubPath": "./typings"
+}

@@ -1,0 +1,32 @@
+{
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "python.defaultInterpreterPath": "/home/takusr/.opentakserver_venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.linting.enabled": true,
+    "python.linting.flake8Enabled": true,
+    "python.formatting.provider": "black",
+    "editor.formatOnSave": true,
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+    "files.watcherExclude": {
+        "**/node_modules/**": true,
+        "**/.git/objects/**": true,
+        "**/.git/subtree-cache/**": true,
+        "**/node_modules/*/**": true,
+        "/sys/**": true,
+        "/proc/**": true,
+        "/dev/**": true,
+        "/run/**": true,
+        "/tmp/**": true,
+        "/var/**": true,
+        "/usr/**": true,
+        "/lib/**": true,
+        "/bin/**": true,
+        "/sbin/**": true,
+        "/boot/**": true,
+        "/etc/**": true,
+        "/opt/**": true
+    }
+}
