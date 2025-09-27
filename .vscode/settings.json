@@ -10,6 +10,27 @@
     "python.testing.pytestArgs": [
         "tests"
     ],
+    "python.analysis.exclude": [
+        "/sys/**",
+        "/usr/**",
+        "/var/**",
+        "/proc/**",
+        "/dev/**",
+        "/tmp/**",
+        "/run/**",
+        "/boot/**",
+        "/lib/**",
+        "/lib64/**",
+        "/opt/**",
+        "/mnt/**",
+        "/media/**",
+        "**/node_modules",
+        "**/__pycache__",
+        "**/.pytest_cache",
+        "**/.mypy_cache",
+        "**/*.egg-info"
+    ],
+    "python.analysis.autoSearchPaths": false,
     "files.watcherExclude": {
         "**/node_modules/**": true,
         "**/.git/objects/**": true,
@@ -28,5 +49,20 @@
         "/boot/**": true,
         "/etc/**": true,
         "/opt/**": true
+    },
+    "files.exclude": {
+        "/sys": true,
+        "/proc": true,
+        "/dev": true,
+        "/run": true,
+        "/tmp": true,
+        "/var": true,
+        "/usr": true,
+        "/lib": true,
+        "/bin": true,
+        "/sbin": true,
+        "/boot": true,
+        "/etc": true,
+        "/opt": true
     }
 }

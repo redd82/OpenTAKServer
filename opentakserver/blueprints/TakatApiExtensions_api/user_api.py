@@ -7,6 +7,7 @@ from flask_security.decorators import roles_accepted, auth_required
 from opentakserver.blueprints.ots_api.api import search, paginate
 from opentakserver.extensions import logger, db
 from opentakserver.models.user import User
+from opentakserver.blueprints.TakatApiExtensions_api.models.TakatUser import TakatUser
 
 user_api_blueprint = Blueprint('takat_user_api_blueprint', __name__)
 
@@ -22,9 +23,9 @@ def get_user_data():
     if not username:
         return jsonify({"success": False, "error": "Invalid username"}), 400
         
-    query = db.session.query(User)
-    query = query.filter(User.username == username)
-    query = search(query, User, 'username')
+    query = db.session.query(TakatUser)
+    query = query.filter(TakatUser.username == username)
+    query = search(query, TakatUser, 'username')
     return paginate(query)
 
 # TAKAT Additional API call for filtering own user
@@ -32,8 +33,15 @@ def get_user_data():
 @auth_required()
 def get_ownuser_data():
     user = current_user
-    query = db.session.query(User)
-    query = query.filter(User.username == user.username)
-    query = search(query, User, 'username')
+    query = db.session.query(TakatUser)
+    query = query.filter(TakatUser.username == user.username)
+    query = search(query, TakatUser, 'username')
     return paginate(query)
 
+@user_api_blueprint.route('/api/users')
+@roles_accepted('administrator')
+def get_users():
+    query = db.session.query(TakatUser)
+    query = search(query, TakatUser, 'username')
+
+    return paginate(query)
