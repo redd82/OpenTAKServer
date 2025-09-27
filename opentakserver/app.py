@@ -195,6 +195,10 @@ def create_app():
 
     init_extensions(app)
 
+    # Register TakatApiExtensions FIRST to override endpoints from both marti_api and ots_api
+    from opentakserver.blueprints.TakatApiExtensions_api import takat_api_extensions
+    app.register_blueprint(takat_api_extensions)
+
     from opentakserver.blueprints.marti_api import marti_blueprint
     app.register_blueprint(marti_blueprint)
 
