@@ -3,25 +3,22 @@
     "venv": ".opentakserver_venv",
     "pythonPath": "/home/takusr/.opentakserver_venv/bin/python",
     "include": [
-        "."
+        "opentakserver",
+        "tests"
     ],
     "exclude": [
         "**/node_modules",
         "**/__pycache__",
+        "**/.pytest_cache",
+        "**/.mypy_cache",
+        "**/*.egg-info",
         ".git",
-        "/sys",
-        "/proc",
-        "/dev",
-        "/run",
-        "/tmp",
-        "/var",
-        "/usr",
-        "/lib",
-        "/bin",
-        "/sbin",
-        "/boot",
-        "/etc",
-        "/opt"
+        ".venv",
+        "venv",
+        "env",
+        "build",
+        "dist",
+        ".tox"
     ],
     "autoSearchPaths": false,
     "extraPaths": [],
