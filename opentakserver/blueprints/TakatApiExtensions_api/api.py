@@ -17,7 +17,7 @@ from opentakserver.models.EUD import EUD
 from opentakserver.models.user import User
 from opentakserver.models.DataPackage import DataPackage
 from opentakserver.models.Certificate import Certificate
-from opentakserver.certificate_authority import CertificateAuthority
+from opentakserver.blueprints.TakatApiExtensions_api.certificate_authority import CertificateAuthority
 
 api_blueprint = Blueprint('takat_api_blueprint', __name__)
 
