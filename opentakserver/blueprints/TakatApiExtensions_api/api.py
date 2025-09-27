@@ -1,4 +1,3 @@
-
 import bleach
 from flask import current_app as app, request, Blueprint, jsonify
 from flask_security.decorators import auth_required

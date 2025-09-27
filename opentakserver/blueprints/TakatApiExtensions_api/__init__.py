@@ -1,3 +1,9 @@
+# Make sure that in app.py the correct sequence of blueprints is loaded
+# on line 198 this should be done first before any other blue print is registered:
+#     # Register TakatApiExtensions FIRST to override endpoints from both marti_api and ots_api
+#    from opentakserver.blueprints.TakatApiExtensions_api import takat_api_extensions
+#    app.register_blueprint(takat_api_extensions)
+#
 from flask import Blueprint
 from opentakserver.blueprints.TakatApiExtensions_api.user_api import user_api_blueprint
 from opentakserver.blueprints.TakatApiExtensions_api.api import api_blueprint
