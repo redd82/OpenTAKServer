@@ -42,6 +42,7 @@ def get_usereuds():
     query = search(query, User, 'username')
     return paginate(query)
 
+# TAKAT API route overload for own implementation
 @api_blueprint.route("/api/certificate", methods=['GET', 'POST'])
 @auth_required()
 def certificate():
@@ -199,6 +200,7 @@ def certificate():
                     return ({'success': False, 'error': f'Failed to save certificate: {str(e)}'}, 500,
                             {'Content-Type': 'application/json'})
                 file_hashes.append(file_hash)
+                # TAKAT adaptation so its easier for TAKAT API to get hashes info
             return {'success': True, 'hash': file_hashes[0], 'hashItak': file_hashes[1]}, 200, {'Content-Type': 'application/json'}
         except BaseException as e:
             logger.error(traceback.format_exc())

@@ -4,7 +4,7 @@ from opentakserver.models.DataPackage import DataPackage
 
 data_package_marti_api = Blueprint('takat_data_package_marti_api', __name__)
 
-
+# TAKAT API route overload for own implementation
 @data_package_marti_api.route('/Marti/sync/search', methods=['GET'])
 def data_package_search():
     data_packages = db.session.execute(db.select(DataPackage)).scalars()

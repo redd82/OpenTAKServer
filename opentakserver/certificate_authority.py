@@ -97,8 +97,6 @@ class CertificateAuthority:
 
             self.logger.debug(command)
 
-            exit_code = subprocess.call(command, shell=True)
-
             if exit_code:
                 raise Exception("Failed to create crl. Exit code {}".format(exit_code))
 
@@ -204,7 +202,7 @@ class CertificateAuthority:
         f.close()
 
         if server:
-            if re.match("^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$", common_name):
+            if re.match(r"^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$", common_name):
                 alt_name_field = "IP.1"
             else:
                 alt_name_field = "DNS.1"

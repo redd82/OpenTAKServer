@@ -42,6 +42,7 @@ class DefaultConfig:
     OTS_CA_ORGANIZATIONAL_UNIT = 'OpenTAKServer'
     OTS_CA_SUBJECT = '/C={}/ST={}/L={}/O={}/OU={}'.format(OTS_CA_COUNTRY, OTS_CA_STATE, OTS_CA_CITY,
                                                           OTS_CA_ORGANIZATION, OTS_CA_ORGANIZATIONAL_UNIT)
+    OTS_FQDN = 'development.takat.nl'  # Fully Qualified Domain Name for certificate generation
     # Messages queued in RabbitMQ will auto-delete after 1 day if not consumed https://www.rabbitmq.com/docs/ttl
     # Set to '0' to disable auto-deletion
     OTS_RABBITMQ_TTL = '86400000'

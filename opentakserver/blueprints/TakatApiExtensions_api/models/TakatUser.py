@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from opentakserver.models.user import User
 
-
+# TAKAT own user implementation in TAKAT user_api adaptation
 @dataclass
 class TakatUser(User):
     

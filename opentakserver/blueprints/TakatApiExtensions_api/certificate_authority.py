@@ -14,9 +14,248 @@ from flask import request
 from jinja2 import Template
 from opentakserver.certificate_authority import CertificateAuthority as BaseCertificateAuthority
 
-
+# TAKAT class extension for generating zip 
 class CertificateAuthority(BaseCertificateAuthority):
-    """Extended Certificate Authority with custom generate_zip method for TakatApiExtensions"""
+    """Extended Certificate Authority with custom generate_zip method and FQDN-based server certificates for TakatApiExtensions"""
+    
+    def create_ca(self):
+        """Override create_ca to use FQDN for server certificate"""
+        if not self.check_if_ca_exists():
+            self.logger.info("Creating CA...")
+            os.makedirs(self.app.config.get("OTS_CA_FOLDER"), exist_ok=True)
+
+            from opentakserver.ca_config import ca_config
+            f = open(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca_config.cfg"), 'w')
+            f.write(ca_config)
+            f.close()
+
+            subject = self.app.config.get("OTS_CA_SUBJECT") + "/CN={}".format(self.app.config.get("OTS_CA_NAME"))
+
+            command = (
+                'openssl req -new -sha256 -x509 -days {} -extensions v3_ca -keyout {} -out {} -passout pass:{} -config {} -subj {}'
+                .format(self.app.config.get("OTS_CA_EXPIRATION_TIME"),
+                        os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca-do-not-share.key"),
+                        os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca.pem"),
+                        self.app.config.get("OTS_CA_PASSWORD"),
+                        os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca_config.cfg"),
+                        subject))
+
+            self.logger.debug(command)
+
+            exit_code = subprocess.call(command, shell=True)
+
+            if exit_code:
+                raise Exception("Failed to create ca.pem. Exit code {}".format(exit_code))
+
+            command = ('openssl x509 -in {} -addtrust clientAuth -addtrust serverAuth -setalias {} -out {}'
+                       .format(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca.pem"),
+                               self.app.config.get("OTS_CA_NAME"),
+                               os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca-trusted.pem")))
+
+            self.logger.debug(command)
+
+            exit_code = subprocess.call(command, shell=True)
+
+            if exit_code:
+                raise Exception("Failed to add trust to CA. Exit code {}".format(exit_code))
+
+            use_legacy = not subprocess.call("openssl list -providers", shell=True)
+
+            if use_legacy:
+                command = ('openssl pkcs12 -legacy -export -in {} -out {} -passout pass:{} -nokeys -caname {}'
+                           .format(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca-trusted.pem"),
+                                   os.path.join(self.app.config.get("OTS_CA_FOLDER"), "truststore-root.p12"),
+                                   self.app.config.get("OTS_CA_PASSWORD"),
+                                   self.app.config.get("OTS_CA_NAME")))
+            else:
+                command = ('openssl pkcs12 -export -in {} -out {} -passout pass:{} -nokeys -caname {}'
+                           .format(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca-trusted.pem"),
+                                   os.path.join(self.app.config.get("OTS_CA_FOLDER"), "truststore-root.p12"),
+                                   self.app.config.get("OTS_CA_PASSWORD"),
+                                   self.app.config.get("OTS_CA_NAME")))
+
+            self.logger.debug(command)
+
+            exit_code = subprocess.call(command, shell=True)
+
+            if exit_code:
+                raise Exception("Failed to export truststore. Exit code {}".format(exit_code))
+
+            Path(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "crl_index.txt")).touch()
+            f = open(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "crl_index.txt.attr"), 'w')
+            f.write("unique_subject = no")
+            f.close()
+
+            command = ('cd {} && openssl ca -config {} -gencrl -keyfile {} -passin pass:{} -cert {} -out {}'
+                       .format(self.app.config.get("OTS_CA_FOLDER"),
+                               os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca_config.cfg"),
+                               os.path.join(self.app.config.get("OTS_CA_FOLDER"), 'ca-do-not-share.key'),
+                               self.app.config.get("OTS_CA_PASSWORD"),
+                               os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca.pem"),
+                               os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca.crl")))
+
+            self.logger.debug(command)
+
+            exit_code = subprocess.call(command, shell=True)
+
+            if exit_code:
+                raise Exception("Failed to create crl. Exit code {}".format(exit_code))
+
+            self.logger.debug("Creating server cert...")
+            # Use OTS_FQDN for the server certificate common name, but keep "opentakserver" as the folder name
+            server_fqdn = self.app.config.get("OTS_FQDN", "localhost")
+            self.issue_certificate_with_custom_name(server_fqdn, "opentakserver", True)
+            self.logger.info(
+                "Certificate authority created successfully. You may need to restart nginx if it's proxying SSL requests.")
+
+        else:
+            self.logger.debug("CA already exists")
+
+    def issue_certificate_with_custom_name(self, common_name, folder_name, server=False):
+        """Issue a certificate with a different common name than the folder name"""
+        if not os.path.exists(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca.pem")):
+            raise FileNotFoundError("ca.pem not found")
+
+        if os.path.exists(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name)):
+            raise Exception("There is already a certificate for {}".format(folder_name))
+
+        os.makedirs(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name))
+
+        subject = self.app.config.get("OTS_CA_SUBJECT") + "/CN={}".format(common_name)
+
+        command = (
+            'openssl req -new -newkey rsa:2048 -sha256 -keyout {} -passout pass:{} -out {} -subj {} -config {}'
+            .format(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name + ".key"),
+                    self.app.config.get("OTS_CA_PASSWORD"),
+                    os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name + ".csr"),
+                    subject,
+                    os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca_config.cfg")))
+
+        self.logger.debug(command)
+
+        exit_code = subprocess.call(command, shell=True)
+        if exit_code:
+            raise Exception("Failed to create csr. Exit code {}".format(exit_code))
+
+        csr = open(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name + ".csr"), 'r')
+        csr_bytes = csr.read().encode()
+        csr.close()
+
+        self.sign_csr_with_custom_name(csr_bytes, common_name, folder_name, server)
+
+        use_legacy = not subprocess.call("openssl list -providers", shell=True)
+
+        if use_legacy:
+            command = (
+                'openssl pkcs12 -legacy -export -in {}.pem -inkey {}.key -out {}.p12 -name {} -CAfile {} -passin pass:{} -passout pass:{}'
+                .format(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name),
+                        os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name),
+                        os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name),
+                        folder_name,
+                        os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca.pem"),
+                        self.app.config.get("OTS_CA_PASSWORD"),
+                        self.app.config.get("OTS_CA_PASSWORD")))
+        else:
+            command = (
+                'openssl pkcs12 -export -in {}.pem -inkey {}.key -out {}.p12 -name {} -CAfile {} -passin pass:{} -passout pass:{}'
+                .format(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name),
+                        os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name),
+                        os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name),
+                        folder_name,
+                        os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca.pem"),
+                        self.app.config.get("OTS_CA_PASSWORD"),
+                        self.app.config.get("OTS_CA_PASSWORD")))
+
+        self.logger.debug(command)
+
+        exit_code = subprocess.call(command, shell=True)
+        if exit_code:
+            raise Exception("Failed to export p12 key. Exit code {}".format(exit_code))
+
+        os.chmod(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name + ".key"), 0o620)
+
+        command = 'openssl rsa -in {} -passin pass:{} -out {}'.format(
+            os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name + ".key"),
+            self.app.config.get("OTS_CA_PASSWORD"),
+            os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name + '.nopass.key'))
+
+        self.logger.debug(command)
+
+        exit_code = subprocess.call(command, shell=True)
+        if exit_code:
+            raise Exception("Failed to remove server key password. Exit code {}".format(exit_code))
+
+        if not server:
+            return self.generate_zip(folder_name)
+        else:
+            # Generate public key for PyJWT to validate tokens
+            command = "openssl x509 -pubkey -in {} -out {}".format(
+                os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name + ".pem"),
+                os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name + ".pub"))
+
+            self.logger.debug(command)
+
+            exit_code = subprocess.call(command, shell=True)
+            if exit_code:
+                raise Exception("Failed to generate server's public key. Exit code {}".format(exit_code))
+
+    def sign_csr_with_custom_name(self, csr_bytes, common_name, folder_name, server=False):
+        """Sign CSR with custom common name different from folder name"""
+        os.makedirs(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name), exist_ok=True)
+        f = open(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name + ".csr"), 'wb')
+        f.write(csr_bytes)
+        f.close()
+
+        if server:
+            if re.match(r"^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$", common_name):
+                alt_name_field = "IP.1"
+            else:
+                alt_name_field = "DNS.1"
+
+            f = open(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name,
+                                  "{}_config.cfg".format(folder_name)), 'w')
+
+            from opentakserver.ca_config import server_config
+            f.write(server_config.render(alt_name_field=alt_name_field, common_name=common_name))
+
+            f.close()
+
+            config_file = os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name,
+                                       "{}_config.cfg".format(folder_name))
+            extensions = 'server'
+        else:
+            config_file = os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca_config.cfg")
+            extensions = 'client'
+
+        command = (
+            'openssl x509 -sha256 -req -days {} -in {} -CA {} -CAkey {} -out {} -set_serial {} -passin pass:{} -extensions {} -extfile {}'
+            .format(self.app.config.get("OTS_CA_EXPIRATION_TIME"),
+                    os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name + ".csr"),
+                    os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca.pem"),
+                    os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca-do-not-share.key"),
+                    os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name + ".pem"),
+                    random.randint(10000, 100000),
+                    self.app.config.get("OTS_CA_PASSWORD"),
+                    extensions,
+                    config_file))
+
+        self.logger.debug(command)
+
+        exit_code = subprocess.call(command, shell=True)
+        if exit_code:
+            raise Exception("Failed to sign csr. Exit code {}".format(exit_code))
+
+        if server:
+            with open(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "ca.pem"), 'r') as ca_file:
+                f = open(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name + ".pem"), 'a')
+                f.write(ca_file.read())
+                f.close()
+
+        f = open(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", folder_name, folder_name + ".pem"), 'r')
+        cert_bytes = f.read().encode()
+        f.close()
+
+        return cert_bytes
     
     def generate_zip(self, common_name):
         truststore = os.path.join(self.app.config.get("OTS_CA_FOLDER"), 'truststore-root.p12')

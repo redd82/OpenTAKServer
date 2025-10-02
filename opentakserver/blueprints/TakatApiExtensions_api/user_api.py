@@ -11,7 +11,6 @@ from opentakserver.blueprints.TakatApiExtensions_api.models.TakatUser import Tak
 
 user_api_blueprint = Blueprint('takat_user_api_blueprint', __name__)
 
-
 # TAKAT Additional API call for filtering single user
 @user_api_blueprint.route('/api/user/get', methods=['POST'])
 @roles_accepted('administrator')
@@ -38,6 +37,7 @@ def get_ownuser_data():
     query = search(query, TakatUser, 'username')
     return paginate(query)
 
+# TAKAT API route overload for own implementation
 @user_api_blueprint.route('/api/users')
 @roles_accepted('administrator')
 def get_users():

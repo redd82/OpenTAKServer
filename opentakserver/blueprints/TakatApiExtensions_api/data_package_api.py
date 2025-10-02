@@ -22,6 +22,8 @@ def data_packages():
         query = query.join(DataPackage.user).filter(User.username == user.username)
     return paginate(query)
 
+# TAKAT API route overload for own implementation
+# removed auth required so users can download package. Chance of package hash being guessed is small.
 @data_package_api.route('/api/data_packages/download')
 def data_package_download():
     if 'hash' not in request.args.keys():
