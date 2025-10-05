@@ -1,15 +1,18 @@
 import json
 import random
 import string
+import os
 from typing import Optional, Dict, Any
+from enum import Enum
 from flask import jsonify
 from enum import IntEnum
 
 import requests
 from requests.adapters import HTTPAdapter
-
 from urllib3.util.retry import Retry
 from urllib.parse import urlencode
+import logging
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Third‑party / project imports
@@ -21,8 +24,8 @@ from opentakserver.blueprints.TakatVideo_api.Mitm import (
 )
 
 from opentakserver.blueprints.TakatVideo_api.util import Safe_Link as Link
-from opentakserver.blueprints.TakatVideo_api.util import Links_Object as Address
 from opentakserver.blueprints.TakatVideo_api.util import Resolutions
+from opentakserver.blueprints.TakatVideo_api.util import HttpCode as HTTPStatusCodes
 from opentakserver.blueprints.TakatVideo_api.util import OTP_UID_Manager as SessionCredentials
 
 # If you need sanitising helpers, import them here as well:
@@ -33,7 +36,7 @@ from opentakserver.blueprints.TakatVideo_api.util import OTP_UID_Manager as Sess
 # MediaMTX API helper
 # ─────────────────────────────────────────────────────────────────────────────
 
-class MediaMTX_API_Interface:
+class MediaMTX_API_Interface_v3:
     """
     Wrapper for MediaMTX Control-API (v3) using a Safe_Link for host/protocol/port.
 
@@ -44,18 +47,18 @@ class MediaMTX_API_Interface:
     def __init__(
         self,
         *,
-        managed_path: str,         # renamed from 'name'
+        uid: str,         # renamed from 'name'
         link: Link,           # Safe_Link object for host/protocol/port
         jwt_token: Optional[str] = None,
         verify_ssl: bool = False
     ) -> None:
 
-        if not managed_path:
+        if not uid:
             raise ValueError("The 'managed_path' parameter is required and cannot be empty.")
         if not link:
             raise ValueError("A Safe_Link object must be provided.")
 
-        self._managed_path = managed_path
+        self._managed_path = uid
         self._link = link
         self._jwt = jwt_token
 
@@ -114,9 +117,36 @@ class MediaMTX_API_Interface:
     # Path operations
     # ------------------------
     def add_path(self, config: Dict[str, Any]) -> int:
+        """_summary_
+
+        Args:
+            config (Dict[str, Any]): _description_
+
+        Returns:
+            int: _description_
+        """
         return self._call("POST", f"/v3/config/paths/add/{self._managed_path}", json=config)
 
     def patch_path(self, changes: Dict[str, Any]) -> int:
+        """_summary_
+
+        Args:
+            changes (Dict[str, Any]): _description_
+
+        Returns:
+            int: _description_
+            
+        Example:
+            # Define the changes you want to apply
+                changes = {
+                    "source": "rtsp://192.168.0.50:554/live",
+                    "loop": True,
+                    "name": "Camera Stream Updated"
+                }
+
+                # Send the patch request
+                status = mtx.patch_path(changes)
+        """
         return self._call("PATCH", f"/v3/config/paths/patch/{self._managed_path}", json=changes)
 
     def delete_path(self) -> int:
@@ -149,124 +179,110 @@ class MediaMTX_API_Interface:
 
  
  
- # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
 # Mediamtx API path configuration object
 # ─────────────────────────────────────────────────────────────────────────────   
-class MediaMTX_Path_Config:
+class MediaMTX_Path_Config_v3:
     """
     Holds the configuration for a MediaMTX path.
     This is a simplified version of the MediaMTX API path configuration.
-
     """
 
-    def __init__( self, name: str,                      source: str,                    sourceFingerprint: str = "",        sourceOnDemand: bool = False,      
-                sourceOnDemandCloseAfter: str = "",     maxReaders: int = 0,            srtReadPassphrase: str = "",        fallback: str = "",
-                useAbsoluteTimestamp: bool = False,     record: bool = False,           recordPath: str = "",               recordFormat: str = "",
-                recordPartDuration: str = "",           recordMaxPartSize: str = "",    recordSegmentDuration: str = "",    recordDeleteAfter: str = "",
-                overridePublisher: bool = False,        srtPublishPassphrase: str = "", rtspTransport: str = "",            rtspAnyPort: bool = False,
-                rtspRangeType: str = "",                rtspRangeStart: str = "",       rtspUDPReadBufferSize: int = 0,     mpegtsUDPReadBufferSize: int = 0,
-                rtpSDP: str = "",                       rtpUDPReadBufferSize: int = 0,  sourceRedirect: str = "",           rpiCameraCamID: int = 0,
-                rpiCameraSecondary: bool = False,       rpiCameraWidth: int = 0,        rpiCameraHeight: int = 0,           rpiCameraHFlip: bool = False,
-                rpiCameraVFlip: bool = False,           rpiCameraBrightness: int = 0,   rpiCameraContrast: int = 0,         rpiCameraSaturation: int = 0,
-                rpiCameraSharpness: int = 0,            rpiCameraExposure: str = "",    rpiCameraAWB: str = "",             rpiCameraAWBGains: list[int] | None = None,
-                rpiCameraDenoise: str = "",             rpiCameraShutter: int = 0,      rpiCameraMetering: str = "",        rpiCameraGain: int = 0,
-                rpiCameraEV: int = 0,                   rpiCameraROI: str = "",         rpiCameraHDR: bool = False,         rpiCameraTuningFile: str = "",
-                rpiCameraMode: str = "",                rpiCameraFPS: int = 0,          rpiCameraAfMode: str = "",          rpiCameraAfRange: str = "",
-                rpiCameraAfSpeed: str = "",             rpiCameraLensPosition: int = 0, rpiCameraAfWindow: str = "",        rpiCameraFlickerPeriod: int = 0,
-                rpiCameraTextOverlayEnable: bool=False, rpiCameraTextOverlay: str = "", rpiCameraCodec: str = "",           rpiCameraIDRPeriod: int = 0,
-                rpiCameraBitrate: int = 0,              rpiCameraHardwareH264Profile: str = "",                             sourceOnDemandStartTimeout: str = "",
-                rpiCameraHardwareH264Level: str = "",   rpiCameraSoftwareH264Profile: str = "",                             runOnRecordSegmentComplete: str = "",
-                rpiCameraSoftwareH264Level: str = "",   rpiCameraMJPEGQuality: int = 0, runOnInit: str = "",                runOnInitRestart: bool = False,
-                runOnDemand: str = "",                  runOnDemandRestart: bool = False,runOnDemandStartTimeout: str = "", runOnDemandCloseAfter: str = "",
-                runOnUnDemand: str = "",                runOnReady: str = "",           runOnReadyRestart: bool = False,    runOnNotReady: str = "",
-                runOnRead: str = "",                    runOnReadRestart: bool = False, runOnUnread: str = "",              runOnRecordSegmentCreate: str = "",
-                
-            ) -> None:
-
-
+    def __init__(self, name: str, source: str, **kwargs) -> None:
+        # Initialize all attributes with defaults
         self.name = name
         self.source = source
-        self.sourceFingerprint = sourceFingerprint
-        self.sourceOnDemand = sourceOnDemand
-        self.sourceOnDemandStartTimeout = sourceOnDemandStartTimeout
-        self.sourceOnDemandCloseAfter = sourceOnDemandCloseAfter
-        self.maxReaders = maxReaders
-        self.srtReadPassphrase = srtReadPassphrase
-        self.fallback = fallback
-        self.useAbsoluteTimestamp = useAbsoluteTimestamp
-        self.record = record
-        self.recordPath = recordPath
-        self.recordFormat = recordFormat
-        self.recordPartDuration = recordPartDuration
-        self.recordMaxPartSize = recordMaxPartSize
-        self.recordSegmentDuration = recordSegmentDuration
-        self.recordDeleteAfter = recordDeleteAfter
-        self.overridePublisher = overridePublisher
-        self.srtPublishPassphrase = srtPublishPassphrase
-        self.rtspTransport = rtspTransport
-        self.rtspAnyPort = rtspAnyPort
-        self.rtspRangeType = rtspRangeType
-        self.rtspRangeStart = rtspRangeStart
-        self.rtspUDPReadBufferSize = rtspUDPReadBufferSize
-        self.mpegtsUDPReadBufferSize = mpegtsUDPReadBufferSize
-        self.rtpSDP = rtpSDP
-        self.rtpUDPReadBufferSize = rtpUDPReadBufferSize
-        self.sourceRedirect = sourceRedirect
-        self.rpiCameraCamID = rpiCameraCamID
-        self.rpiCameraSecondary = rpiCameraSecondary
-        self.rpiCameraWidth = rpiCameraWidth
-        self.rpiCameraHeight = rpiCameraHeight
-        self.rpiCameraHFlip = rpiCameraHFlip
-        self.rpiCameraVFlip = rpiCameraVFlip
-        self.rpiCameraBrightness = rpiCameraBrightness
-        self.rpiCameraContrast = rpiCameraContrast
-        self.rpiCameraSaturation = rpiCameraSaturation
-        self.rpiCameraSharpness = rpiCameraSharpness
-        self.rpiCameraExposure = rpiCameraExposure
-        self.rpiCameraAWB = rpiCameraAWB
-        self.rpiCameraAWBGains = rpiCameraAWBGains
-        self.rpiCameraDenoise = rpiCameraDenoise
-        self.rpiCameraShutter = rpiCameraShutter
-        self.rpiCameraMetering = rpiCameraMetering
-        self.rpiCameraGain = rpiCameraGain
-        self.rpiCameraEV = rpiCameraEV
-        self.rpiCameraROI = rpiCameraROI
-        self.rpiCameraHDR = rpiCameraHDR
-        self.rpiCameraTuningFile = rpiCameraTuningFile
-        self.rpiCameraMode = rpiCameraMode
-        self.rpiCameraFPS = rpiCameraFPS
-        self.rpiCameraAfMode = rpiCameraAfMode
-        self.rpiCameraAfRange = rpiCameraAfRange
-        self.rpiCameraAfSpeed = rpiCameraAfSpeed
-        self.rpiCameraLensPosition = rpiCameraLensPosition
-        self.rpiCameraAfWindow = rpiCameraAfWindow
-        self.rpiCameraFlickerPeriod = rpiCameraFlickerPeriod
-        self.rpiCameraTextOverlayEnable = rpiCameraTextOverlayEnable
-        self.rpiCameraTextOverlay = rpiCameraTextOverlay
-        self.rpiCameraCodec = rpiCameraCodec
-        self.rpiCameraIDRPeriod = rpiCameraIDRPeriod
-        self.rpiCameraBitrate = rpiCameraBitrate
-        self.rpiCameraHardwareH264Profile = rpiCameraHardwareH264Profile
-        self.rpiCameraHardwareH264Level = rpiCameraHardwareH264Level
-        self.rpiCameraSoftwareH264Profile = rpiCameraSoftwareH264Profile
-        self.rpiCameraSoftwareH264Level = rpiCameraSoftwareH264Level
-        self.rpiCameraMJPEGQuality = rpiCameraMJPEGQuality
-        self.runOnInit = runOnInit
-        self.runOnInitRestart = runOnInitRestart
-        self.runOnDemand = runOnDemand
-        self.runOnDemandRestart = runOnDemandRestart
-        self.runOnDemandStartTimeout = runOnDemandStartTimeout
-        self.runOnDemandCloseAfter = runOnDemandCloseAfter
-        self.runOnUnDemand = runOnUnDemand
-        self.runOnReady = runOnReady
-        self.runOnReadyRestart = runOnReadyRestart
-        self.runOnNotReady = runOnNotReady
-        self.runOnRead = runOnRead
-        self.runOnReadRestart = runOnReadRestart
-        self.runOnUnread = runOnUnread
-        self.runOnRecordSegmentCreate = runOnRecordSegmentCreate
-        self.runOnRecordSegmentComplete = runOnRecordSegmentComplete
-    
+        
+        # Set defaults for all other attributes
+        defaults = {
+            "sourceFingerprint": "",
+            "sourceOnDemand": False,
+            "sourceOnDemandCloseAfter": "",
+            "maxReaders": 0,
+            "srtReadPassphrase": "",
+            "fallback": "",
+            "useAbsoluteTimestamp": False,
+            "record": False,
+            "recordPath": "",
+            "recordFormat": "",
+            "recordPartDuration": "",
+            "recordMaxPartSize": "",
+            "recordSegmentDuration": "",
+            "recordDeleteAfter": "",
+            "overridePublisher": False,
+            "srtPublishPassphrase": "",
+            "rtspTransport": "",
+            "rtspAnyPort": False,
+            "rtspRangeType": "",
+            "rtspRangeStart": "",
+            "rtspUDPReadBufferSize": 0,
+            "mpegtsUDPReadBufferSize": 0,
+            "rtpSDP": "",
+            "rtpUDPReadBufferSize": 0,
+            "sourceRedirect": "",
+            "rpiCameraCamID": 0,
+            "rpiCameraSecondary": False,
+            "rpiCameraWidth": 0,
+            "rpiCameraHeight": 0,
+            "rpiCameraHFlip": False,
+            "rpiCameraVFlip": False,
+            "rpiCameraBrightness": 0,
+            "rpiCameraContrast": 0,
+            "rpiCameraSaturation": 0,
+            "rpiCameraSharpness": 0,
+            "rpiCameraExposure": "",
+            "rpiCameraAWB": "",
+            "rpiCameraAWBGains": None,
+            "rpiCameraDenoise": "",
+            "rpiCameraShutter": 0,
+            "rpiCameraMetering": "",
+            "rpiCameraGain": 0,
+            "rpiCameraEV": 0,
+            "rpiCameraROI": "",
+            "rpiCameraHDR": False,
+            "rpiCameraTuningFile": "",
+            "rpiCameraMode": "",
+            "rpiCameraFPS": 0,
+            "rpiCameraAfMode": "",
+            "rpiCameraAfRange": "",
+            "rpiCameraAfSpeed": "",
+            "rpiCameraLensPosition": 0,
+            "rpiCameraAfWindow": "",
+            "rpiCameraFlickerPeriod": 0,
+            "rpiCameraTextOverlayEnable": False,
+            "rpiCameraTextOverlay": "",
+            "rpiCameraCodec": "",
+            "rpiCameraIDRPeriod": 0,
+            "rpiCameraBitrate": 0,
+            "rpiCameraHardwareH264Profile": "",
+            "rpiCameraHardwareH264Level": "",
+            "rpiCameraSoftwareH264Profile": "",
+            "rpiCameraSoftwareH264Level": "",
+            "rpiCameraMJPEGQuality": 0,
+            "runOnInit": "",
+            "runOnInitRestart": False,
+            "runOnDemand": "",
+            "runOnDemandRestart": False,
+            "runOnDemandStartTimeout": "",
+            "runOnDemandCloseAfter": "",
+            "runOnUnDemand": "",
+            "runOnReady": "",
+            "runOnReadyRestart": False,
+            "runOnNotReady": "",
+            "runOnRead": "",
+            "runOnReadRestart": False,
+            "runOnUnread": "",
+            "runOnRecordSegmentCreate": "",
+            "runOnRecordSegmentComplete": ""
+        }
+
+        # Update defaults with any provided values
+        defaults.update(kwargs)
+
+        # Assign them all to self
+        for k, v in defaults.items():
+            setattr(self, k, v)
+
     def to_dict(self) -> dict:
         """Return all attributes as a dictionary."""
         return self.__dict__.copy()
@@ -274,645 +290,917 @@ class MediaMTX_Path_Config:
     def to_json(self, indent: int = 2) -> str:
         """Return all attributes as a JSON string."""
         return json.dumps(self.to_dict(), indent=indent)
-    
-    def update_value(self, key: str, value) -> None:
-        """Update a single attribute if it exists."""
-        if hasattr(self, key):
-            setattr(self, key, value)
-        else:
-            print(f"Warning: '{key}' is not a valid attribute.")
-    
+
     def load_from_dict(self, data: dict) -> None:
-        """
-        Load values from a dictionary into this config.
-        Silently ignores keys that don't exist in the class.
-        """
+        """Load values from a dictionary into this config."""
         for key, value in data.items():
             if hasattr(self, key):
                 setattr(self, key, value)
             else:
                 print(f"Warning: '{key}' is not a valid attribute, skipping.")
-    
+
     def load_from_json(self, json_str: str) -> None:
         data = json.loads(json_str)
-        for key, value in data.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
-            else:
-                print(f"Warning: '{key}' is not a valid attribute, skipping.")
+        self.load_from_dict(data)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "MediaMTX_Path_Config_v3":
+        """
+        Create a new instance from a dictionary.
+        Ignores unknown keys.
+        """
+        # Extract known parameters
+        valid_keys = cls.__init__.__code__.co_varnames
+        filtered_data = {k: v for k, v in data.items() if k in valid_keys}
+        return cls(**filtered_data)
   
+
 # ─────────────────────────────────────────────────────────────────────────────
-# TAKAT API helper
+# TakatVideo API helper (v3)
 # ─────────────────────────────────────────────────────────────────────────────
-class TakatVideo_API_Interface:
-    # Class-level endpoints dictionary
-    ENDPOINTS = {
-        "start_injection": "TakatVideo/StartInjection",
-        "stop_injection": "TakatVideo/StopInjection",
-        "disconnect": "TakatVideo/Disconnect"
-        # Add more endpoints here in the future
-        #Unregister
-        #Reset
+
+class TakatVideo_API_Interface_v3:
+    """
+    Wrapper for the TakatVideo API using a Safe_Link for host/protocol/port.
+
+    • Operates on a fixed uid provided at init
+    • Supports optional JWT token
+    • Provides Start/Stop/Disconnect injection operations
+    """
+
+    class Endpoint(str, Enum):
+        START_INJECTION = "TakatVideo/StartInjection"   # all endpoints have an otp and uid input
+        STOP_INJECTION = "TakatVideo/StopInjection"
+        DISCONNECT = "TakatVideo/Disconnect"
+        ADD_CAMERA = "TakatVideo/AddCamera"
+        REMOVE_CAMERA ="TakatVideo/RemoveCamera"
+        REGISTER = "TakatVideo/Register"
+        UNREGISTER = "TakatVideo/Unregister"
         
-    }
-    
-    
-    def __init__(self, fqdn: str = "127.0.0.1", port: Optional[int] = 80, protocol: str = "https"):
-        if protocol not in ("http", "https"):
-            raise ValueError("Protocol must be 'http' or 'https'.")
-        
-        self._fqdn = fqdn
-        self._port = port
-        self._protocol = protocol
-
-    # Read-only properties
-    @property
-    def fqdn(self) -> str:
-        return self._fqdn
-
-    @property
-    def port(self):
-        if self._port is None:
-            if self.protocol == "https":
-                return 443
-            elif self.protocol == "http":
-                return 80
-        else:
-            return self._port
-
-    @property
-    def protocol(self) -> str:
-        return self._protocol
-
-    # Internal helper to build full URL
-    def _build_url(self, endpoint_key: str, **params) -> str:
-        if endpoint_key not in self.ENDPOINTS:
-            raise ValueError(f"Unknown endpoint: {endpoint_key}")
-        endpoint_path = self.ENDPOINTS[endpoint_key]
-        query = urlencode(params)
-        default_port = 443 if self.protocol == "https" else 80
-        port_part = f":{self.port}" if self.port != default_port else ""
-        return f"{self.protocol}://{self.fqdn}{port_part}/{endpoint_path}?{query}"
-
-    # API URL generators
-    def start_injection_url(self, uid: str, otp: str) -> str:
-        return self._build_url("start_injection", uid=uid, otp=otp)
-
-    def stop_injection_url(self, uid: str, otp: str) -> str:
-        return self._build_url("stop_injection", uid=uid, otp=otp)
-
-    def disconnect(self, uid: str, otp: str, ip:str) -> str:
-        return self._build_url("disconnect", uid=uid, otp=otp)
-
-    # Optional request methods
-    def start_injection_request(self, uid: str, otp: str, jwt: Optional[str] = None) -> int:
-        try:
-            url = self.start_injection_url(uid, otp)
-            headers = {"Authorization": f"Bearer {jwt}"} if jwt else {}
-            response = requests.get(url, headers=headers)
-            return response.status_code
-        except requests.RequestException as e:
-            print(f"Error in start_injection_request: {e}")
-            return 0
-
-    def stop_injection_request(self, uid: str, otp: str, jwt: Optional[str] = None) -> int:
-        try:
-            url = self.stop_injection_url(uid, otp)
-            headers = {"Authorization": f"Bearer {jwt}"} if jwt else {}
-            response = requests.get(url, headers=headers)
-            return response.status_code
-        except requests.RequestException as e:
-            print(f"Error in stop_injection_request: {e}")
-            return 0
-        
-  
-class FFMPEG_Command_Builder:
-    class IngestType(IntEnum):
-        CAMERA = 0
-        NETWORKED_MP4 = 1
-        LOCAL_MP4 = 2
-        YOLO = 3
 
     def __init__(
         self,
+        *,
         uid: str,
-        linked_device: str,
-        otp: str,
-        timeout: int = 5_000_000,
-        input_type: "FFMPEG_Command_Builder.IngestType" = IngestType.CAMERA,
-    ):
-        self.UID = uid
-        self.Linked_Device = linked_device
-        self.OTP = otp
-        self.timeout = timeout
-        self._input_type: FFMPEG_Command_Builder.IngestType = input_type
-        self._last_type: Optional[FFMPEG_Command_Builder.IngestType] = None
+        link: Link,  # Safe_Link object for host/protocol/port
+        jwt_token: Optional[str] = None,
+        verify_ssl: bool = False,
+    ) -> None:
 
-    @property
-    def metadata_template(self) -> str:
-        return (
-            f'-metadata uid="{self.UID}" '
-            f'-metadata linked_device="{self.Linked_Device}" '
-            f'-metadata otp="{self.OTP}"'
-        )
+        if not uid:
+            raise ValueError("The 'uid' parameter is required and cannot be empty. - Takat API")
+        if not link:
+            raise ValueError("A Safe_Link object must be provided.")
 
-    @classmethod
-    def allowed_types(cls) -> list["FFMPEG_Command_Builder.IngestType"]:
-        return list(cls.IngestType)
+        self._uid = uid
+        self._link = link
+        self._jwt = jwt_token
 
-    @property
-    def last_type_used(self) -> Optional["FFMPEG_Command_Builder.IngestType"]:
-        return self._last_type
+        # Use the Safe_Link's hyperlink as base
+        self._base_url = self._link.Hyperlink.rstrip("/")
 
-    def update_metadata(
+        self._sess = requests.Session()
+        self._sess.verify = verify_ssl
+
+        # Set retries
+        retries = Retry(total=3, backoff_factor=3, status_forcelist=[502, 503, 504])
+        adapter = HTTPAdapter(max_retries=retries)
+        self._sess.mount("http://", adapter)
+        self._sess.mount("https://", adapter)
+
+        try:
+            self.alive = self.is_alive()
+        except Exception:
+            self.alive = False
+
+    # ------------------------
+    # Internal helpers
+    # ------------------------
+    def _headers(self) -> Dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self._jwt:
+            headers["Authorization"] = f"Bearer {self._jwt}"
+        return headers
+
+    def _qs(self, otp: Optional[str] = None) -> Dict[str, str]:
+        qs = {"uid": self._uid}
+        if otp:
+            qs["otp"] = otp
+        if self._jwt:
+            qs["jwt"] = self._jwt
+        return qs
+
+    def _call(
+        self,
+        endpoint: "TakatVideo_API_Interface_v3.Endpoint",
+        *,
+        otp: Optional[str] = None,
+        return_full: bool = False,
+    ) -> Any:
+        url = f"{self._base_url}/{endpoint.value}"
+        try:
+            response = self._sess.get(
+                url,
+                headers=self._headers(),
+                params=self._qs(otp),
+                timeout=10, #TODO make this variable
+            )
+            return response if return_full else response.status_code
+        except requests.RequestException:
+            return None if return_full else 0
+
+    # ------------------------
+    # API operation methods
+    # ------------------------
+    def start_injection(self, otp: str) -> int:
+        """Start injection for this uid using the given OTP."""
+        return self._call(self.Endpoint.START_INJECTION, otp=otp)
+
+    def start_injection_url(self, otp: Optional[str] = None) -> str:
+        """Return the URL for starting injection, including uid and otp."""
+        return self.build_url(self.Endpoint.START_INJECTION, otp=otp)
+
+    def stop_injection(self, otp: str) -> int:
+        """Stop injection for this uid using the given OTP."""
+        return self._call(self.Endpoint.STOP_INJECTION, otp=otp)
+
+    def stop_injection_url(self, otp: Optional[str] = None) -> str:
+        """Return the URL for stopping injection, including uid and otp."""
+        return self.build_url(self.Endpoint.STOP_INJECTION, otp=otp)
+
+    def disconnect(self, otp: str) -> int:
+        """Disconnect this uid using the given OTP."""
+        return self._call(self.Endpoint.DISCONNECT, otp=otp)
+
+    def disconnect_url(self, otp: Optional[str] = None) -> str:
+        """Return the URL for disconnecting, including uid and otp."""
+        return self.build_url(self.Endpoint.DISCONNECT, otp=otp)
+
+    def add_camera(self, otp: str) -> int:
+        """Add a camera for this uid using the given OTP."""
+        return self._call(self.Endpoint.ADD_CAMERA, otp=otp)
+
+    def add_camera_url(self, otp: Optional[str] = None) -> str:
+        """Return the URL for adding a camera, including uid and otp."""
+        return self.build_url(self.Endpoint.ADD_CAMERA, otp=otp)
+
+    def remove_camera(self, otp: str) -> int:
+        """Remove a camera for this uid using the given OTP."""
+        return self._call(self.Endpoint.REMOVE_CAMERA, otp=otp)
+
+    def remove_camera_url(self, otp: Optional[str] = None) -> str:
+        """Return the URL for removing a camera, including uid and otp."""
+        return self.build_url(self.Endpoint.REMOVE_CAMERA, otp=otp)
+
+    def register(self, otp: str) -> int:
+        """Register this uid using the given OTP."""
+        return self._call(self.Endpoint.REGISTER, otp=otp)
+
+    def register_url(self, otp: Optional[str] = None) -> str:
+        """Return the URL for registering, including uid and otp."""
+        return self.build_url(self.Endpoint.REGISTER, otp=otp)
+
+    def unregister(self, otp: str) -> int:
+        """Unregister this uid using the given OTP."""
+        return self._call(self.Endpoint.UNREGISTER, otp=otp)
+
+    def unregister_url(self, otp: Optional[str] = None) -> str:
+        """Return the URL for unregistering, including uid and otp."""
+        return self.build_url(self.Endpoint.UNREGISTER, otp=otp)
+
+    # ------------------------
+    # State / Info
+    # ------------------------
+    def is_alive(self) -> bool:
+        """Simple health check: try disconnect without OTP."""
+        status = self._call(self.Endpoint.DISCONNECT)
+        return bool(status and 200 <= status < 300)
+    
+    def build_url(
+        self,
+        endpoint: "TakatVideo_API_Interface_v3.Endpoint",
+        *,
+        otp: Optional[str] = None,
+    ) -> str:
+        """
+        Return the full request URL for the given endpoint.
+        Always includes uid, and otp/jwt if provided.
+        """
+        if not isinstance(endpoint, self.Endpoint):
+            raise ValueError(f"Invalid endpoint: {endpoint}")
+
+        url = f"{self._base_url}/{endpoint.value}"
+        qs = urlencode(self._qs(otp))
+        return f"{url}?{qs}"
+    
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "base_url": self._base_url,
+            "jwt_provided": bool(self._jwt),
+            "verify_ssl": self._sess.verify,
+            "alive": self.alive,
+            "uid": self._uid,
+        }
+  
+
+class FFMPEG_Command_Builder_v3:
+    """
+    FFMPEG command builder for different ingest types, initialized like TakatVideo_API_Interface_v3.
+    """
+
+    class IngestType(IntEnum):
+        Default = 0         #change this value to match one of the other settings so we can easily change the default behaviour
+        Unknown = -1
+        CAMERA = 0
+        NETWORKED_MP4 = 1
+        LOCAL_MP4 = 2
+        #Yolo = 3
+
+    class Protocol(str, Enum):
+            # Standard FFmpeg streaming protocols
+            DEFAULT = "rtsp" # a nice way to make the default easily changable
+            
+            RTSP = "rtsp"
+            RTMP = "rtmp"
+            SRT = "srt"
+            HLS = "hls"
+            #MPEGTS = "mpegts"        # Transport Stream over UDP
+            HTTP = "http"
+            HTTPS = "https"
+            MMS = "mms"
+
+            # ATAK-compatible / common tactical streaming protocols
+            #UDP = "udp"
+            #TCP = "tcp"
+            #FILE = "file"            # Local file output
+            #MPEGTS_UDP = "mpegts+udp"
+            #MPEGTS_TCP = "mpegts+tcp"
+
+    def __init__(
         self,
         *,
-        timeout: Optional[int] = None,
-        uid: Optional[str] = None,
-        otp: Optional[str] = None,
-    ) -> None:
-        if timeout and timeout > 0:
-            self.timeout = timeout
-        if uid:
-            self.UID = uid
-        if otp:
-            self.OTP = otp
-
-    def run_on_ready(
-        self,
-        source: "Link",
-        input_type: Optional["FFMPEG_Command_Builder.IngestType"] = None,
-        port: int = 8554,
-    ) -> str:
-        return self._ingest(input_type or self._input_type, source, port)
-
-    def _ingest(
-        self,
-        type_: "FFMPEG_Command_Builder.IngestType",
-        source: "Link",
-        port: int,
-    ) -> str:
-        self._last_type = type_
-
-        if type_ == self.IngestType.CAMERA:
-            input_path = source.Hyperlink
-        elif type_ == self.IngestType.NETWORKED_MP4:
-            input_path = f"{source.Root}{source.URL}"
-        elif type_ == self.IngestType.LOCAL_MP4:
-            input_path = source.URL
-        elif type_ == self.IngestType.YOLO:
-            raise NotImplementedError("YOLO ingestion not yet implemented")
-        else:
-            raise ValueError(f"Unsupported type: {type_}")
-
-        return (
-            f'ffmpeg -timeout {self.timeout} '
-            f'-re -stream_loop -1 -i "{input_path}" '
-            f'-c copy {self.metadata_template} '
-            f'-f rtsp "rtsp://127.0.0.1:{port}/{self.UID}/stream"'
-        )
-
-    def to_dict(self) -> dict:
-        return {
-            "UID": self.UID,
-            "Linked_Device": self.Linked_Device,
-            "OTP": self.OTP,
-            "Timeout": self.timeout,
-            "MetadataTemplate": self.metadata_template,
-            "InputType": self._input_type.name,
-            "LastTypeUsed": self._last_type.name if self._last_type else None,
-            "Enum": {t.name: t.value for t in self.IngestType},
-        }
+        camera_uid: str,
+        linked_uid: str,
+        mediamtx_streaming_port: int = 8554,
+        link: Link,  # Safe_Link or equivalent for destination
+    ):
 
 
+        self._camera_uid = camera_uid
+        self._linked_device = linked_uid
+        self._link = link
+        self._validate_protocol(self._link.Protocol)
+        self._streaming_port = mediamtx_streaming_port
+ 
+        self._metadata = f"-metadata uid='{self._camera_uid}' -metadata linked_device='{self._linked_device}'"
     
+    ## helper function
+    def _validate_protocol(self, protocol) -> None:
+        """
+        Raise ValueError if protocol is not in the allowed FFMPEG_Command_Builder_v3.Protocol enum.
+        Accepts any enum with a `.value` matching the allowed protocol strings.
+        """
+        # get list of allowed values
+        allowed = [p.value for p in self.Protocol]
+
+        # convert protocol to string if it’s an Enum
+        proto_value = protocol.value if isinstance(protocol, Enum) else str(protocol)
+
+        if proto_value not in allowed:
+            raise ValueError(
+                f"Invalid protocol: {proto_value}. Must be one of {allowed}"
+            )
+
+    def run_on_innit(
+        self,
+        ingest_type: 'FFMPEG_Command_Builder_v3.IngestType' = IngestType.Unknown,
+        output_protocol: 'FFMPEG_Command_Builder_v3.Protocol' = Protocol.DEFAULT,
+        timeout: int = 5000000,
+        loop: bool = True
+    ) -> str:
+        match ingest_type: 
+            case FFMPEG_Command_Builder_v3.IngestType.CAMERA:
+                #NOTE  we expect the link to be something like this: "rtsp://192.168.0.50:554/live"
+                return self._ffmpeg_esp32cam(timeout=timeout, encoding=output_protocol)
+            case FFMPEG_Command_Builder_v3.IngestType.NETWORKED_MP4:
+                #NOTE we expect the link to be set up to something like this: "https://example.com/video.mp4"
+                return self._ingest_networked_mp4(loop=loop, encoding=output_protocol)
+                
+            case FFMPEG_Command_Builder_v3.IngestType.LOCAL_MP4:
+                # NOTE we expect the payload of the link to point to a local linux file path like:  /home/clips/nevergonnagiveyouup.mp4
+                # NOTE the port also has to be set to the streaming port of the mediamtx server
+                return self._ingest_local_mp4(loop=loop, encoding=output_protocol)
+            
+            case _ :
+                return ""
+              
+    def _ffmpeg_esp32cam(self, timeout: int = 50000, encoding: 'FFMPEG_Command_Builder_v3.Protocol' = Protocol.RTSP ) -> str:
+        """Ingest a live RTSP camera feed.
+        Eaxmple output: ffmpeg -timeout 5000000 -i "rtsp://192.168.0.50:554/live" -c copy -metadata uid="stream123" -metadata linked_device="cam01" -f rtsp "rtsp://127.0.0.1:9000/stream123/stream"
+
+        """
+        Port = ""
+        if self._streaming_port != None: Port = f":{self._streaming_port}"
+        
+        output = f"ffmpeg -timeout {timeout} -i '{self._link.Hyperlink} -c copy {self._metadata} -f {encoding.value} '{encoding.value}'://127.0.0.1{Port}/{self._camera_uid}/stream" 
+        return output
+     
+    def _ingest_local_mp4(self,
+                        encoding: "FFMPEG_Command_Builder_v3.Protocol" = Protocol.RTSP,
+                        loop: bool = True) -> str:
+        """_summary_
+
+        Args:
+            encoding (FFMPEG_Command_Builder.Protocol, optional): _description_. Defaults to Protocol.RTSP.
+            loop (bool, optional): _description_. Defaults to True.
+        Returns:
+            str: _description_
+        """
+        
+        l="0"
+        if loop == True: l = "-1"
+        Port = ""
+        if self._streaming_port != None: Port = f":{self._streaming_port}"
+        
+        
+        return f"ffmpeg -re -stream_loop {l} -i '{self._link.Payload}' -c copy {self._metadata} -f {encoding.value} '{encoding.value}'://127.0.0.1{Port}/{self._camera_uid}/stream"
+
+    def _ingest_networked_mp4(self,
+                            loop: bool = True,
+                            encoding: "FFMPEG_Command_Builder_v3.Protocol" = Protocol.RTSP) -> str:
+        """
+        Ingest an MP4 file over the network (HTTP/HTTPS).
+
+        Args:
+            uid: Unique identifier for the stream.
+            url: HTTP/HTTPS URL pointing to an MP4 file.
+            linked_device: Device name to tag in metadata.
+            otp: One-time password or key to tag in metadata.
+            port: Destination port (default: 8554).
+            protocol: Streaming protocol (default: RTSP).
+            loop: Whether to loop the MP4 indefinitely (default: True).
+            reencode: If True, re-encode to H.264/AAC (ensures compatibility).
+                      
+            example output:
+            ffmpeg -re -stream_loop -1 -i "https://example.com/video.mp4" -c copy -metadata uid="stream123" -metadata linked_device="cam01" -metadata otp="secretOTP" 
+            -f rtsp "rtsp://127.0.0.1:9000/stream123/stream"
+            
+            
+        """
+                
+        l="0"
+        if loop == True: l = "-1"
+        Port = ""
+        if self._streaming_port != None: Port = f":{self._streaming_port}"
+        
+        return f"ffmpeg -re -stream_loop {l} -i '{self._link.Hyperlink}' -c copy {self._metadata} -f {encoding.value} '{encoding.value}://127.0.0.1{Port}/{self._camera_uid}/stream'"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Single Camera object
-# ─────────────────────────────────────────────────────────────────────────────      
-class Camera_Object():
-    Address_ENUM = {
-        "camera": 0,
-        "MediaMTX": 1,
-        "Takat": 2,
-    }
+# ───────────────────────────────────────────────────────────────────────────── 
+class Camera_Object_V3():
+    class CameraType(IntEnum):
+        Default = 0 # Elegant way of making the default easily changable
+        Unknown = -1
+        Source = 0
+        Virtual = 1
     
-    def __init__(self, Camera_UID: str, OTP: str, config: MediaMTX_Path_Config, Camera_Address: Link, Mediamtx_Server: Link, Takat_Server: Link, StreamingPort: Optional[int] = 8554, Input_Type: Optional[int]=0):
-        # basic paramaters
-        self._statuscode = 0
-        self._status_message = ""
-        self._otp = OTP
-        self._streamingport = StreamingPort
+    
+    def __init__(self, Config: MediaMTX_Path_Config_v3, Source_Camera_UID: str, Virtual_Camera_UID: str, API_mediamtx: Link, API_takat: Link, Stream_Mediamtx: Link, 
+                 Stream_SourceCamera: Link, Stream_SourceCameraInputType: FFMPEG_Command_Builder_v3.IngestType = FFMPEG_Command_Builder_v3.IngestType.CAMERA,
+                 Output_Protocol: FFMPEG_Command_Builder_v3.Protocol = FFMPEG_Command_Builder_v3.Protocol.RTSP, Timeout: Optional[int] = 5000000, Loop: Optional[bool] = True) -> None:
         
-        #an elegent way to make sure the input type is in the FFMPEG builder enum.
-        if Input_Type not in FFMPEG_Command_Builder.ingest_types():
-            self._input_type = 0
-        else: self._input_type = Input_Type
-        # inputs from user
-        self._camera_UID = Camera_UID
-        self._config = config
-        #links
-        self._camera_address = Camera_Address
-        self._mediamtx_address = Mediamtx_Server
-        self._takat_address = Takat_Server  
+        # NOTE, we assume the user has made sure the uid's do not already exist.
         
-        #connect to mediamtx api
-        self._MediamtxAPI = MediaMTX_API_Interface(managed_path=Camera_UID, link=Mediamtx_Server, verify_ssl=False, jwt_token=None)
-        #connect to takat api
-        self._TakatVideoAPi = TakatVideo_API_Interface(fqdn=Takat_Server.Host, port=Takat_Server.Port, protocol=Takat_Server.Protocol)
-        #ffmpeg command builder to alter config runonready command
-        self._ffmpeg_command = FFMPEG_Command_Builder(UID=Camera_UID, Linked_Device=Camera_UID, OTP=OTP, input_type=self._input_type)
-
-        # Initial setup
-        status = self.Add_Path()
-        if status != 200:
-            self._status_message = f"Failed to initialize camera {Camera_UID}. Status code: {status}"
-            self._statuscode = status
-        else:
-            self._status_message = f"Camera {Camera_UID} initialized successfully."
-            self._statuscode = 200
-    
-    # Enum-style type handling
-    def _enum(self, address_type: int) -> int:
-        if address_type not in self.Address_ENUM.values():
-            return 0  # default to 'camera'
-        return address_type
-    
-    #elegant way to allow for listing allowed types from outsode the class
-    @classmethod
-    def address_types(cls) -> list[int]:
-        return list(cls.Address_ENUM.values())
-    
-    @property
-    def FFMPEG_RunOnReady(self) -> str:
-        return self._ffmpeg_command.RunOnReady(Source=self._camera_address,MediaMTX_Streaming_Port=self._streamingport)
+        # uid's for this camera object, both a source and virtual camera
+        self._source_camera_UID = Source_Camera_UID
+        self._virtual_camera_UID = Virtual_Camera_UID
+                
+        # the (inet) path to the source camera (on the streamig mediamtx server, not directly back to the camera)
+        self._source_camera_inet = f""
+        # the (inet) path to the virtual camera
+        self._virtual_camera_inet = f""
         
-    @property
-    def OTP(self) -> str:
-        return self._otp        
-    @property
-    def MediamtxAPI(self) -> MediaMTX_API_Interface:
-        return self._MediamtxAPI
+        # camera input type
+        self._camera_type = Camera_Object_V3.CameraType.Source
+        # config
+        self._config = Config
+        
+        # object status code
+        self._statuscode = HTTPStatusCodes.CONFLICT.code
+        self._status_message = f"camera {self._source_camera_UID}: {HTTPStatusCodes.CONFLICT.status}, not initialized"
+        
+        # adresses
+        self._api_mediamtx = API_mediamtx   # path to the mediamtx api, can be lan or inet
+        self._api_takat = API_takat         # path to takat api,        can be lan or inet
+        #source camera address
+        self._stream_source_camera = Stream_SourceCamera    #path to source camera, can be la and inet; most likely inet tho
+        self._stream_source_camera_inputtype = Stream_SourceCameraInputType # what type of camera is it? (stream, local mp4, networked mp4)
+        self._stream_source_camera_output_protocol = Output_Protocol    # as what type of stream shoud we present it? (rtsp being the default)
+        self._timeout = Timeout or 50000
+        if Loop == None: Loop = False
+        self._loop = Loop
+        
+        #streaming address
+        self._stream_mediamtx = Stream_Mediamtx  # exteral path where clients can find mediamtx path's (in most cases inet)
+        
+        #ffmpeg commands for the source camera
+        port = self._stream_mediamtx.Port or 8554 # try and set the prot
+        self._ffmpeg = FFMPEG_Command_Builder_v3(camera_uid=self._source_camera_UID,
+                                                 linked_uid= self._virtual_camera_UID, 
+                                                 mediamtx_streaming_port=port, 
+                                                 link=self._stream_source_camera)
 
-    @property   
-    def Ready(self) -> bool:
-        return self._statuscode in (200, 201)
-    
-    @property
-    def StatusMessage(self) -> str:
-        return self._status_message
-
-    @property
-    def Camera_UID(self) -> str:
-        return self._camera_UID
-    @property
-    def Statuscode(self) -> int:
-        return self._statuscode
-    @property
-    def MediaMTXPathConfiguration(self) -> MediaMTX_Path_Config:
-        return self._config
-    
-    def get_address(self, device: int | str = "camera") -> Link:
-        """
-        Return the address based on enum value or key.
-        - device can be int (0, 1, 2) or str ("camera", "MediaMTX", "Takat").
-        """
-        if isinstance(device, str):
-            device = self.Address_ENUM.get(device, 0)
-
-        match device:
-            case 0:
-                return self._camera_address
-            case 1:
-                return self._mediamtx_address
-            case 2:
-                return self._takat_address
-            case _:
-                return self._camera_address
-    
-    
-    def Add_Path(self) -> int:
-        """Create the path on the MediaMTX server. Returns HTTP status code."""
+        
+        #api interfaces
+        _interface_api_mediamtx_source = MediaMTX_API_Interface_v3  (uid=self._source_camera_UID, link=self._api_mediamtx, verify_ssl=False, jwt_token=None)
+        _interface_api_mediamtx_virtual= MediaMTX_API_Interface_v3  (uid=self._virtual_camera_UID, link=self._api_mediamtx, verify_ssl=False, jwt_token=None)
+        _interface_api_takat_source = TakatVideo_API_Interface_v3   (uid=self._source_camera_UID, link=self._api_takat   , verify_ssl=False, jwt_token=None)
+        _interface_api_takat_virtual =TakatVideo_API_Interface_v3   (uid=self._virtual_camera_UID, link=self._api_takat   , verify_ssl=False, jwt_token=None)
+        
+        #try and create the path for the source and virtual camera
         try:
-            status = self._MediamtxAPI.add_path(self._config.to_dict())
-            self._status_message = "MediaMTX server added path"
-            self._statuscode = status
-            return status
-        except requests.exceptions.ConnectionError:
-            self._status_message = "MediaMTX server unreachable"
-            self._statuscode = 503
-            return 503
-        except Exception as e:
-            self._status_message = f"MediaMTX server Unexpected error adding path: {e}"
-            self._statuscode = 500
-            return 500
-    
-    #change a single config value
-    def Update_Path_Single_Value(self, Key: str, Value: str) -> int:
-        """Update a single config value on the MediaMTX server."""
-        try:
-            # Update local config
-            self._config.update_value(key=Key, value=Value)
-            # Call API
-            status = self._MediamtxAPI.patch_path(self._config.to_dict())
-            # set status codes
-            self._status_message = f"MediaMTX path patched: {Key}={Value}"
-            self._statuscode = status
-            return status
-
-        except requests.exceptions.ConnectionError:
-            self._status_message = "MediaMTX server unreachable during single-value update"
-            self._statuscode = 503
-            return 503
-
-        except Exception as e:
-            self._status_message = f"Unexpected error patching single value: {e}"
-            self._statuscode = 500
-            return 500
-        
-        
-    # change a number of config values
-    def Update_Path_List_Values(self, updates: dict[str, str]) -> int:
-        """
-        Update multiple key/value pairs in the config and patch once.
-        Example: 
-                obj.Update_Path_List_Values({"timeout": "5000", "uid": "newUID"})
-        """
-        try:
-            # Apply all updates locally
-            for key, value in updates.items():
-                self._config.update_value(key=key, value=value)
+            #try to create the source camera path
+            status = _interface_api_mediamtx_source.add_path(self._config.__dict__)
+            #tweak the path config settings so that:
+            # runoninit -> ffmpeg to ingest stream
+            # runonnotready -> api call to takat to remove the camera from the register and remove the source and virtual cam path from mediamtx
+            # sourceondemand = false
             
-            # Call API once with full config
-            status = self._MediamtxAPI.patch_path(self._config.to_dict())
+            runoninit = self._ffmpeg.run_on_innit(ingest_type=self._stream_source_camera_inputtype, output_protocol=self._stream_source_camera_output_protocol,
+                                                  timeout=self._timeout, loop=self._loop)
+            #TODO fix the takat video api endpoint call to remove the camera path, the virtual camera path and the video object.
+            runonnotready = _interface_api_takat_source.disconnect
             
-            self._status_message = f"MediaMTX path patched with {len(updates)} values"
-            self._statuscode = status
-            return status
+            patch = {"runOnInit": runoninit,
+                     "runOnNotReady": runonnotready, 
+                     "sourceOnDemand": False,
+                     "name": self._source_camera_UID
+                     }
+            
+            # patch the path            
+            status_p = _interface_api_mediamtx_source.patch_path(patch)
+            # update the source camera (inet) url.
+            self._source_camera_inet = f"{self._stream_mediamtx.Root()}{self._source_camera_UID}/stream"
+            
+            # we have a good status and a status_p(atch), so the path is created
+            if 200 <= status < 300 and 200 <= status_p < 300:
+                # try to add the virtual path
+                status = _interface_api_mediamtx_virtual.add_path(self._config.__dict__)
+                # tweak the config settings for the virtual path     
+                # sourceondemand = true
+                # source = 127.0.0.1:port/source camera uid/stream
+                # source on demand timeout = 30
+                
+                Uid =self._source_camera_UID
+                Port = f":{self._stream_mediamtx.Port}"
+                Protocol = f"{self._stream_mediamtx.Protocol}://"
+                
+                patch = {"source": f"{Protocol}://127.0.0.1{Port}/{Uid}/stream",
+                         "timeout": self._timeout,
+                         "sourceOnDemand": True,
+                         "name": self._virtual_camera_UID}
+                    
+                status_p = _interface_api_mediamtx_virtual.patch_path(patch)
+                
+                #update the source camera (inet) url.
+                self._virtual_camera_inet = f"{self._stream_mediamtx.Root()}{self._virtual_camera_UID}/stream"
+                
+                if 200 <= status < 300 and 200 <= status_p < 300:
+                    #we created the virtual path!!
+                    self._statuscode = HTTPStatusCodes.OK.code
+                    self._status_message = HTTPStatusCodes.OK.status
+                    
+                else:
+                    #we did not create the virtual path.
+                    self._statuscode = HTTPStatusCodes.FAILED_DEPENDENCY.code
+                    self._status_message = HTTPStatusCodes.FAILED_DEPENDENCY.status
+
+            else:
+                #we did not create the source camera path
+                self._statuscode = HTTPStatusCodes.FAILED_DEPENDENCY.code
+                self._status_message = HTTPStatusCodes.FAILED_DEPENDENCY.status                    
+                     
         except requests.exceptions.ConnectionError:
-            self._status_message = "MediaMTX server unreachable during multi-value update"
-            self._statuscode = 503
-            return 503
+            #mediamtx server (api) not reachable
+            self._statuscode = HTTPStatusCodes.NETWORK_CONNECT_TIMEOUT_ERROR.code
+            self._status_message = HTTPStatusCodes.NETWORK_CONNECT_TIMEOUT_ERROR.status
+            #call self destruct
+            
         except Exception as e:
-            self._status_message = f"Unexpected error patching multiple values: {e}"
-            self._statuscode = 500
-        return 500
+            # something unknown has gone wrong 
+            self._statuscode = HTTPStatusCodes.INTERNAL_SERVER_ERROR.code
+            self._status_message = HTTPStatusCodes.INTERNAL_SERVER_ERROR.status
+            # call self destruct
+            
+    @property
+    def SourceCamera_UID(self) -> str:
+        return self._source_camera_UID
+    @property
+    def VirtualCamera_UID(self) -> str:
+        return self._virtual_camera_UID
+    @property
+    def SourceCamera_Path(self) -> str:
+        return self._source_camera_inet
+    @property
+    def VirtualCamera_Path(self) -> str:
+        return self._virtual_camera_inet
+    @property
+    def SourceCamera_Type(self) -> CameraType:
+        return self._camera_type
+    
+    def ItsMe(self, uid) -> bool:
+        if self.SourceCamera_UID == uid or self.VirtualCamera_UID == uid: return True
+        else: return False
+
+    def self_destruct(self, otp):
+        """
+        Remove MediaMTX paths for source and virtual cameras,
+        disconnect from TakatVideo API, and clean up internal state.
+        """
         
-        
-    #remove the path.
-    def Remove_Path(self) -> int:
-        """Delete the path on the MediaMTX server."""
+        #TODO this function can only be finnished once the takat api calls are done.
         try:
-            status = self.MediamtxAPI.delete_path()
-            self._status_message = "MediaMTX server path deleted"
-            self._statuscode = status
-            return status
-        except requests.exceptions.ConnectionError:
-            self._status_message = "MediaMTX server unreachable during delete"
-            self._statuscode = 503
-            return 503
+            # Initialize API interfaces again (or reuse stored ones)
+            api_source = MediaMTX_API_Interface_v3(uid=self._source_camera_UID, link=self._api_mediamtx)
+            api_virtual = MediaMTX_API_Interface_v3(uid=self._virtual_camera_UID, link=self._api_mediamtx)
+
+            # Delete the paths
+            status_source = api_source.delete_path()
+            status_virtual = api_virtual.delete_path()
+            
+
+            # Optionally, disconnect TakatVideo cameras
+            takat_source = TakatVideo_API_Interface_v3(uid=self._source_camera_UID, link=self._api_takat)
+            takat_source.unregister(otp) #unregister this camera (remove it from the video object)
+
         except Exception as e:
-            self._status_message = f"Unexpected error deleting path: {e}"
-            self._statuscode = 500
-            return 500
-       
-     
-    def Change_OTP(self, new_otp: str) -> int:
-        """Change the OTP for the camera."""
-        try: 
-            self._otp = new_otp
-            #update ffmpeg command builder
-            self._ffmpeg_command.ChangeMetaData(otp=new_otp)
-            self._status_message = "OTP changed."
-            self._statuscode = 200
-            return 200  # status code of ok
-        except Exception as e:
-            self._statuscode = 500
-            self._status_message = f"Error changing OTP: {e}"
-            return 500  # status code of internal server error
-        
-    def Alive(self) -> bool:
-        """Check if the MediaMTX server is alive and reachable."""
-        try:
-            alive = self.MediamtxAPI.is_alive()
-            self._status_message = "MediaMTX server status checked"
-            self._statuscode = 200 if alive else 503
-            return alive
-        except Exception as e:
-            self._status_message = f"Error checking server status: {e}"
-            self._statuscode = 503
-            return False
+            print(f"Self-destruct cleanup failed: {e}")
+
+        # Clear all internal references
+        for attr in list(vars(self).keys()):
+            setattr(self, attr, None)
+            
 
     def to_dict(self) -> dict:
         """
-        Returns a dictionary representation of the camera object,
-        including nested objects.
+        Serialize this camera object into a dictionary.
         """
         return {
-            "Camera_UID": self.Camera_UID,
-            "OTP": self.OTP,
-            "StreamingPort": self._streamingport,
-            "InputType": self._input_type,
-            "StatusCode": self.Statuscode,
-            
-            # Addresses (converted to dict if possible)
-            "CameraAddress": self._camera_address.to_dict() if hasattr(self._camera_address, "to_dict") else str(self._camera_address),
-            "MediamtxAddress": self._mediamtx_address.to_dict() if hasattr(self._mediamtx_address, "to_dict") else str(self._mediamtx_address),
-            "TakatAddress": self._takat_address.to_dict() if hasattr(self._takat_address, "to_dict") else str(self._takat_address),
-
-            # Config
-            "MediaMTXPathConfiguration": self._config.to_dict() if hasattr(self._config, "to_dict") else str(self._config),
-            
-            # FFmpeg command builder
-            "FFMPEG_RunOnReady": self.FFMPEG_RunOnReady,
-            "FFMPEG_CommandBuilder": self._ffmpeg_command.__dict__,  # or a to_dict if implemented
-
-            # Mediamtx / Takat APIs
-            "MediamtxAPI": str(self._MediamtxAPI),
-            "TakatVideoAPI": str(self._TakatVideoAPi)
+            "source_camera_uid": self._source_camera_UID,
+            "virtual_camera_uid": self._virtual_camera_UID,
+            "source_camera_path": self._source_camera_inet,
+            "virtual_camera_path": self._virtual_camera_inet,
+            "camera_type": int(self._camera_type),
+            "config": self._config.to_dict(),
+            "status_code": self._statuscode,
+            "status_message": self._status_message,
+            "stream_source_camera": self._stream_source_camera.to_dict() if hasattr(self._stream_source_camera, "to_dict") else str(self._stream_source_camera),
+            "stream_source_camera_inputtype": int(self._stream_source_camera_inputtype),
+            "stream_source_camera_output_protocol": int(self._stream_source_camera_output_protocol),
+            "timeout": self._timeout,
+            "loop": self._loop,
+            "stream_mediamtx": self._stream_mediamtx.to_dict() if hasattr(self._stream_mediamtx, "to_dict") else str(self._stream_mediamtx),
         }
 
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict,
+        api_mediamtx: Link,
+        api_takat: Link,
+        stream_mediamtx: Link
+    ) -> "Camera_Object_V3":
+        """
+        Rebuild a Camera_Object_V3 from serialized data.
+        NOTE: This will call MediaMTX/Takat APIs again (just like __init__).
+        """
+        config = MediaMTX_Path_Config_v3.from_dict(data["config"])
 
+        return cls(
+            Config=config,
+            Source_Camera_UID=data["source_camera_uid"],
+            Virtual_Camera_UID=data["virtual_camera_uid"],
+            API_mediamtx=api_mediamtx,
+            API_takat=api_takat,
+            Stream_Mediamtx=stream_mediamtx,
+            Stream_SourceCamera=data["stream_source_camera"],
+            Stream_SourceCameraInputType=FFMPEG_Command_Builder_v3.IngestType(data["stream_source_camera_inputtype"]),
+            Output_Protocol=FFMPEG_Command_Builder_v3.Protocol(data["stream_source_camera_output_protocol"]),
+            Timeout=data.get("timeout", 5000000),
+            Loop=data.get("loop", True),
+        )
+    
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Video object that glues everything together
 # ─────────────────────────────────────────────────────────────────────────────
-class Video_Object:
-    """
-    Holds all metadata for a single camera / virtual feed pair and
-    embeds a MediaMTX_API_Interface to manage paths on the fly.
-    """
+class Video_Object_v3:
+    def __init__(self, 
+                  source_camera: Link, mediamtx_server_api: Link, takat_server_api: Link, 
+                  mediamtx_server_stream: Link, path_config: MediaMTX_Path_Config_v3,
+                  linked_device: str, virtual_camera_uid: str, source_camera_uid: str, 
+                  primary_uid: Optional[str] = None, 
+                  ffmpeg_processing_type: Optional[FFMPEG_Command_Builder_v3.IngestType] = FFMPEG_Command_Builder_v3.IngestType.Unknown,
+                  ffmpeg_output_type:Optional[FFMPEG_Command_Builder_v3.Protocol] = FFMPEG_Command_Builder_v3.Protocol.DEFAULT,
+                  otp: Optional[str] = None): 
+        
+        self._CAMERAS: list[Camera_Object_V3] = [] #this holds all the camera objects
+        
+        self._primary_uid = primary_uid   #the primary uid of the video object 
+        
+        if self._IsUnique(linked_device) == True:
+            self._link_device = linked_device   #a unique lnked device we add it later in the init
+            
+        else:
+            raise ValueError(f"Linked Device '{linked_device}' already exists in the global list")
 
+        
+        #make sure the primary uid is setup and unique 
+        if primary_uid is None or primary_uid == "":
+            while True:
+                candidate_uid = SessionCredentials.random_uid()  # generate a random UID
+                if self._IsUnique(uid=candidate_uid):      # check if it already exists
+                    primary_uid = candidate_uid                  # accept it if unique
+                    self._primary_uid = candidate_uid
+                    break                                       # exit the loop
+                # otherwise, loop again and generate a new random UID
+        else:
+            # test if provided primary UID already exists
+            if not self._IsUnique(primary_uid):
+                raise ValueError(f"Primary UID '{primary_uid}' already exists in the global list")
+            self._primary_uid = primary_uid
+        
+        
+        if otp == None: # if otp is not set, set a random one.
+            self._otp= SessionCredentials.random_otp(12)
+        else: self._otp = otp
+        
+        self._credentials = SessionCredentials(uid=self._primary_uid, otp=self._otp) #create a credential manger for this session.
+        
+        self._credentials.add_linked_device(linked_device)  # (finaly) set the linked device
+        
+        # create a virtal camera based on the primary uid. this is the main channel the takusers look at. 
+        # it should be the path of the mediamtx serverstream and the primary uid of this object.
+        self._mediamtx_streaming_server = mediamtx_server_stream
+        self._MYCAM_API_MediamMTX = MediaMTX_API_Interface_v3(uid=self._primary_uid,
+                                                            link=mediamtx_server_api,
+                                                            jwt_token=None,
+                                                            verify_ssl=False)
+        self._MYCAM_config = path_config
+        self._MYCAM_config.source = f"{self._mediamtx_streaming_server.Root()}{self._primary_uid}" #OPTIONAL TODO, change to setup so the source points to the first virtual camera in credentials
+        self._MYCAM_config.name = self._primary_uid
+        
+        result = self._MYCAM_API_MediamMTX.add_path(self._MYCAM_config.__dict__)
+        if result == 200: pass #TODO, add status update or exit here
+        
+        self._MYCAM_virtual_camera_path = f"{self._mediamtx_streaming_server.Root()}{self._primary_uid}" # the path to the main virual camera
+        #We now have an object that has a primary and linked uid, an otp its own virtual camera path, now lets add its first camera object (it should have atleast one)
+        try:
+        #make sure we have have a camera type set.
+            if ffmpeg_processing_type == None: ffmpeg_processing_type = FFMPEG_Command_Builder_v3.IngestType.Default
+            self._processing_type = ffmpeg_processing_type
+            if ffmpeg_output_type == None: ffmpeg_output_type = FFMPEG_Command_Builder_v3.Protocol.DEFAULT
+            self._ffmpeg_output_type = ffmpeg_output_type
+            
+            #create a camera for the main user.
+            self.Add_Camera(Config=self._MYCAM_config, Source_UID=source_camera_uid, Virtual_UID=virtual_camera_uid, 
+                            Mediamtx_API=mediamtx_server_api, Takat_API=takat_server_api,
+                            Source_Camera=source_camera, MediaMTX_Stream=mediamtx_server_stream, Source_Type=self._processing_type, 
+                            OutputProtocol=self._ffmpeg_output_type)
+            #update MYCAM source path to the virtual camera of the camera object
+            change= {"source": f"{self._mediamtx_streaming_server.Root()}{virtual_camera_uid}",
+                    "name": f"{self._primary_uid} streaming: {virtual_camera_uid}",
+                    }
+            self._MYCAM_API_MediamMTX.patch_path(changes=change) #patch the main virtual cam to the firts virtual camera.
+            #self._MYCAM_API_MediamMTX.patch_path(changes=change.__dict__) #patch the main virtual cam to the firts virtual camera.
+            self._current = virtual_camera_uid  #this is the channel we are currently watching.      
+            
+            # Self-register to global lists this also updates the global linked uid / virtual path
+            #Add_Video_Object(self)
+            
+        except Exception as e:
+            raise RuntimeError(f"Error while registering camera path: {e}") from e
+            
+        # if all went wel, we now hav a video object with its own rtsp://mediamtx.com:8554/primary_uid  path, of which the source points to
+        # the camera object virtual camera that has path rtsp://mediamtx.com:8554/virtual_camera
+        # whilest the source camera lives at path rtsp://mediamtx.com:8554/source_camera
+        
+        # in the _CAMERAS is a complete collection of all camera objects. using the "Switch_Channel" functions we can change
+        # the source path of the rtsp://mediamtx.com:8554/primary_uid
+            
+    @property
+    def PrimaryUID(self) -> str:
+        return self._credentials.primary_uid
+    @property
+    def LinkedDevice(self) ->str:
+        return self._credentials.linked_device
+    @property
+    def CameraPath(self) -> str:
+        return self._MYCAM_virtual_camera_path   
+    @property
+    def Used_UIDs(self) -> list[str]:
+        return self._credentials.all_uids
+    @property
+    def LinkedDevice_CameraPath(self) -> tuple:
+        return (self._credentials.linked_device, self._MYCAM_virtual_camera_path)
     
-    def __init__(self, uid: str, source_camera: Link, mediamtx_server: Link, takat_server: Link, streaming_port: int, camera_config: MediaMTX_Path_Config,
-                 virtual_camera_uid: Optional[str] = None,source_camera_uid: Optional[str] = None, linked_device: Optional[str] = None, 
-                 processing_type: Optional[int] = 0):
+    def WallPaper(self) -> list[str]:
+        """
+        Iterate through all cameras and return a list of their VirtualCamera_Path strings.
+        
+        Returns:
+            List of VirtualCamera_Path for all cameras in _CAMERAS.
+        """
+        output_paths: list[str] = []
 
-        # keep track of the status of the video object
-        self._statuscode = 503
-        self._status_message = f"Object {uid}: Not initialized"
+        # Iterate over a copy of the camera list to be safe
+        for camera in self._CAMERAS[:]:
+            try:
+                # Get the virtual camera path
+                path = camera.VirtualCamera_Path
+                output_paths.append(path)
+            except AttributeError:
+                # Camera object may not have the expected attribute
+                raise ValueError(f"Camera '{camera.VirtualCamera_UID}' does not have the right attibutes")
+            except Exception as e:
+                # Catch any unexpected errors and continue
+                raise ValueError(f"Camera '{camera.VirtualCamera_UID}' has had an unkown error")
+        return output_paths
+                  
+    def Switch_Source(self, up: bool = True) -> None:
+        """_summary_
+
+        Args:
+            up (bool, optional): _description_. Defaults to True.
+            this makes the function to select the next one in the list,
+            if set to false it selects the previous in the list.
+            the function "loops" through the end/beginning of the list if it gets to the end
+
+        Raises:
+            ValueError: _description_
+            ValueError: _description_
+        """
+        if not self._CAMERAS:
+            raise ValueError("No cameras available")
+
+        found = False
+        for idx, camera in enumerate(self._CAMERAS):
+            if camera.VirtualCamera_UID == self._current:
+                found = True
+                
+                # calculate next index based on direction
+                if up:
+                    next_idx = (idx + 1) % len(self._CAMERAS)
+                else:
+                    next_idx = (idx - 1) % len(self._CAMERAS)
+                
+                # get the next camera object
+                next_camera = self._CAMERAS[next_idx]
+                
+                # update virtual camera path
+                change = {
+                    "source": f"{next_camera.VirtualCamera_Path}",  
+                    "name": f"{self._primary_uid} streaming: {next_camera.VirtualCamera_UID}",
+                }
+                
+                self._MYCAM_API_MediamMTX.patch_path(changes=change.__dict__)
+                self._current = next_camera.VirtualCamera_UID
+                break
+
+        if not found:
+            raise ValueError(f"Current UID '{self._current}' not found in camera list")
+            
+    def Add_Camera(self, Config, Source_UID: str, Virtual_UID: str,Mediamtx_API: Link, Takat_API: Link, Source_Camera: Link, MediaMTX_Stream: Link,
+                   Source_Type: FFMPEG_Command_Builder_v3.IngestType = FFMPEG_Command_Builder_v3.IngestType.Default,
+                   OutputProtocol: FFMPEG_Command_Builder_v3.Protocol = FFMPEG_Command_Builder_v3.Protocol.DEFAULT, Timeout: int | None = 5000000,
+                   Loop: bool | None = False) -> None:
         
-        
-        #note the addresses, the streaming port, and the type (is it a regular cam, a networked mp4 a local one etc etc, check the ffmpeg class enum for more info)
-        self._streamingport = streaming_port
-        self._processing_type = processing_type
-        #the links
-        self._source_camera_address = source_camera
-        self._mediamtx_server_address = mediamtx_server
-        self._takat_server_address = takat_server
-        #do we have a linked device?
-        if linked_device == None:
-            self._linked_device = "None"
-        else: self._linked_device = linked_device
-        # main camera config
-        self._main_Config = camera_config
-        
-        
-        #credentials list
-        # Unique identifiers (we use the source camera as a base)
-        self._credentials = SessionCredentials(uid=uid)    #create a new set of credentials
-        self._uid = self._credentials.find_uid_by_name("primary_key")
-        self._otp = self._credentials.otp
-        
-        #set the camera uid and add it to the credentials list
-        if source_camera_uid == None:
-            self._credentials.add_uid(self._credentials.random_uid(), "source_camera")
-        else: self._credentials.add_uid(source_camera_uid, "source_camera")
-        
-        # set the virtual camera and add it to the credentials list.
-        if virtual_camera_uid == None:
-            self._credentials.add_uid(self._credentials.random_uid(), "virtual_camera")
-            #update the linked device to be the virtual camera (if it was none)
-            if self._linked_device == "None":
-                self._linked_device = self._credentials.find_uid_by_name("virtual_camera")[0]
-        else: self._credentials.add_uid(virtual_camera_uid, "virtual_camera")
-        
-        
-        #create the source camera (object)
-        scuid= self._credentials.find_uid_by_name("source_camera")[0]
-        self.Source_Camera = Camera_Object(Camera_UID=scuid, OTP=self._credentials.otp,
-                                           config=self._main_Config,
-                                           Camera_Address=self._source_camera_address,
-                                           Mediamtx_Server=self._mediamtx_server_address,
-                                           Takat_Server=self._takat_server_address,
-                                           StreamingPort=self._streamingport)
-        
-        #make changes to the source camera config to set the  correct hooks
-        self.Source_Camera.Update_Path_Single_Value("RunOnReady", self.Source_Camera.FFMPEG_RunOnReady) #add the ffmpeg run on ready command
-        #TODO create the runonnotread command
-        self.Source_Camera.Update_Path_Single_Value("RunOnNotReady", "takat api, unregister camera and remove path") #add the ffmpeg run on ready command
-        
-        #create the virtual camera (object)
-        vcuid= self._credentials.find_uid_by_name("virtual_camera")[0]
-        #create virtual camera address
-        self._virtual_camera_address = Link(host=self._mediamtx_server_address.Host, protocol="rtsp",
-                                            port=self._streamingport, path=f"{vcuid}/stream" , allowed_protocols=self._mediamtx_server_address.ALLOWED_PROTOCOLS
-                                            )
-        self.Virtual_Camera = Camera_Object(Camera_UID=vcuid, OTP=self._credentials.otp,
-                                           config=self._main_Config,
-                                           Camera_Address=self._virtual_camera_address,
-                                           Mediamtx_Server=self._mediamtx_server_address,
-                                           Takat_Server=self._takat_server_address,
-                                           StreamingPort=self._streamingport)
-        # make changes to the virtual camera to set the corect hooks AND input
+        # check if uid of source and virtual are not already in a video object in the global list
+        if self._IsUnique(Source_UID) == True and self._IsUnique(Virtual_UID) == True:
+            #its safe to create this object and its paths
+            camera = Camera_Object_V3(Config=Config,Source_Camera_UID=Source_UID,Virtual_Camera_UID=Virtual_UID, API_mediamtx=Mediamtx_API,
+                                API_takat=Takat_API, Stream_Mediamtx=MediaMTX_Stream, Stream_SourceCamera=Source_Camera ,Stream_SourceCameraInputType=Source_Type,
+                                Output_Protocol=OutputProtocol, Timeout=Timeout, Loop=Loop)
+            
+            
+            # add the source uid to the credentials
+            self._credentials.add_source_camera(Source_UID)
+            # add the virtual uid to the credentials
+            self._credentials.add_virtual_camera(Virtual_UID)
+            # add the camera to the array.
+            self._CAMERAS.append(camera)
+            
+    def Delete_Camera(self, uid: str) -> None:
+        """
+        Deletes a camera from this Video_Object_v3 by UID (source or virtual).
+
+        Steps:
+        1. Find the camera matching the UID.
+        2. Remove its paths / call self_destruct.
+        3. Remove its UIDs from credentials.
+        4. Remove the camera object from the _CAMERAS list.
+        """
+        for i, camera in enumerate(self._CAMERAS):
+            if camera.ItsMe(uid):  # check if this camera matches the UID
+                # store UIDs for credential removal
+                source_uid = camera.SourceCamera_UID
+                virtual_uid = camera.VirtualCamera_UID
+
+                # call the camera's self-destruct routine
+                camera.self_destruct(self._otp)
+
+                # remove the UIDs from the credentials
+                self._credentials.remove_uid(uid=source_uid, uid_type=SessionCredentials.UIDType.SOURCE_CAMERA )
+                self._credentials.remove_uid(uid=virtual_uid, uid_type=SessionCredentials.UIDType.VIRTUAL_CAMERA)
+
+                # remove the camera object from the list
+                del self._CAMERAS[i]
        
-        #TODO create the rononready command
-        self.Virtual_Camera.Update_Path_Single_Value("RunOnReady", "takat api start injection") #add the ffmpeg run on ready command
-        #TODO create the runonnotready
-        self.Virtual_Camera.Update_Path_Single_Value("RunOnNotReady", "takat api, stop injection and remove path") #add the ffmpeg run on ready command
-        
-        #set the source for this camera to http://127.0.0.1/virtualcamera_uid/stream, this allows us to duplicate the stream
-        # and let the server handle the many clients on the virtual stream
-        self.Virtual_Camera.Update_Path_Single_Value("source", f"{self._virtual_camera_address.Protocol}://127.0.0.1:{self._virtual_camera_address.Port}/{vcuid}/stream")
-        
-        
-        
-        #TODO
-        # try catch to check if all paths are there.
-        
-    @property
-    def UID(self) -> str:
-        return self._uid[0]
-    @property
-    def OTP(self) -> str:
-        return self._otp
-    
-    # Read-only properties for status
-    @property
-    def CheckCamerasStatus(self) -> int:
+                # if no cameras remain, trigger self destruct
+                if not self._CAMERAS:
+                    self._Self_Destruct(self._otp)
+
+                # exit after deleting one camera
+                return
+
+        # If we reach here, the UID was not found
+        raise ValueError(f"No camera found with UID '{uid}'")
+                
+    def _IsUnique(self, uid) -> bool:
         """
-        Check if both Source_Camera and Virtual_Camera are ready.
-        Sets self._status based on the camera objects' status codes.
-        Returns the overall status code.
+        Returns True if the given UID is *not yet used* in any Video_Object_v3.
+        Uses the global VIDEO_OBJECTS registry to verify uniqueness.
         """
-        source_status = self.Source_Camera.Statuscode
-        virtual_status = self.Virtual_Camera.Statuscode
+        #TODO make functional
+        return True
 
-        # Both cameras OK
-        if source_status in (200, 201) and virtual_status in (200, 201):
-            self._status = 200
-            self._status_message = "Both cameras are ready."
-        else:
-            self._status = 500
-            messages = []
-            if source_status not in (200, 201):
-                messages.append(f"Source camera error ({source_status}): {self.Source_Camera.StatusMessage}")
-            if virtual_status not in (200, 201):
-                messages.append(f"Virtual camera error ({virtual_status}): {self.Virtual_Camera.StatusMessage}")
-            self._status_message = "; ".join(messages)
-
-        return self._status
-
-    # Remove both paths
-    def RemoveAllPaths(self) -> int:
+    def _Self_Destruct(self, otp) -> None:
         """
-        Remove both the source and virtual camera paths on the MediaMTX server.
-        Updates self._status and self._status_message.
-        Returns the combined status code:
-            - 200 if both paths removed successfully
-            - 500 if one or both failed
+        Fully destroys this Video_Object_v3:
+        - Safely destroys all camera objects and their credentials.
+        - Deletes the main virtual camera path.
+        - Removes itself from the global registry if applicable.
+        
+        Can be called multiple times safely; exceptions are caught and logged.
         """
-        source_status = self.Source_Camera.Remove_Path()
-        virtual_status = self.Virtual_Camera.Remove_Path()
+        if otp != self._credentials.otp:
+            raise ValueError("Wrong otp provided")
 
-        if source_status == 200 and virtual_status == 200:
-            self._status = 200
-            self._status_message = "Both camera paths removed successfully."
-        else:
-            self._status = 500
-            messages = []
-            if source_status != 200:
-                messages.append(f"Source camera removal failed ({source_status}): {self.Source_Camera.StatusMessage}")
-            if virtual_status != 200:
-                messages.append(f"Virtual camera removal failed ({virtual_status}): {self.Virtual_Camera.StatusMessage}")
-            self._status_message = "; ".join(messages)
+        # Use logging instead of print for better control
+        logger = logging.getLogger(__name__)
+        
+        # Iterate over a copy of the camera list to safely delete items while looping
+        for camera in self._CAMERAS[:]:
+            # Step 1: self-destruct the camera
+            try:
+                camera.self_destruct(self._otp)
+                logger.info(f"Camera {camera.VirtualCamera_UID} destroyed successfully.")
+            except Exception as e:
+                logger.warning(f"Failed to self-destruct camera {camera.VirtualCamera_UID}: {e}")
 
-        return self._status
+            # Step 2: remove credentials
+            try:
+                self._credentials.remove_uid(uid=camera.SourceCamera_UID, uid_type=SessionCredentials.UIDType.SOURCE_CAMERA)
+                self._credentials.remove_uid(uid=camera.VirtualCamera_UID, uid_type=SessionCredentials.UIDType.VIRTUAL_CAMERA)
+                logger.info(f"Credentials for camera {camera.VirtualCamera_UID} removed successfully.")
+            except Exception as e:
+                logger.warning(f"Failed to remove credentials for camera {camera.VirtualCamera_UID}: {e}")
 
-    def ValidCredentials(self, otp:str, uid: str) -> bool:
-        if self._credentials.valid(otp=otp, uid=uid) == True: return True
-        else: return False 
-    
+            # Step 3: remove from _CAMERAS list
+            if camera in self._CAMERAS:
+                self._CAMERAS.remove(camera)
+
+        # Step 4: delete main virtual camera path
+        try:
+            self._MYCAM_API_MediamMTX.delete_path()
+            logger.info(f"Main virtual camera path {self._primary_uid} deleted successfully.")
+        except Exception as e:
+            logger.warning(f"Failed to delete main virtual camera path {self._primary_uid}: {e}")
+
+        # Step 5: remove from global registry if exists
+        try:
+            #TODO
+            #Remove_Video_Object(self)
+            # if "GLOBAL_VIDEO_OBJECTS" in globals() and self in GLOBAL_VIDEO_OBJECTS:
+            #    GLOBAL_VIDEO_OBJECTS.remove(self)
+            logger.info(f"Video object {self._primary_uid} removed from global registry.")
+        except Exception as e:
+            logger.warning(f"Failed to remove video object {self._primary_uid} from global registry: {e}")
+
+        logger.info(f"Video object {self._primary_uid} fully self-destructed.")
+  
     def to_dict(self) -> dict:
-        """
-        Returns all relevant settings of this Video_Object as a dictionary,
-        including nested objects.
-        """
         return {
-            "UID": self.UID,
-            "OTP": self.OTP,
-            "StreamingPort": self._streamingport,
-            "ProcessingType": self._processing_type,
-            "LinkedDevice": self._linked_device,
-            "SourceCameraAddress": self._source_camera_address.to_dict() if hasattr(self._source_camera_address, "to_dict") else str(self._source_camera_address),
-            "MediamtxServerAddress": self._mediamtx_server_address.to_dict() if hasattr(self._mediamtx_server_address, "to_dict") else str(self._mediamtx_server_address),
-            "TakatServerAddress": self._takat_server_address.to_dict() if hasattr(self._takat_server_address, "to_dict") else str(self._takat_server_address),
-            "Credentials": {
-                "primary_uid": self._credentials.primary_uid,
-                "uids": self._credentials.uids,
-                "otp": self._credentials.otp
-            },
-            "SourceCamera": self.Source_Camera.to_dict() if hasattr(self.Source_Camera, "to_dict") else str(self.Source_Camera),
-            "VirtualCamera": self.Virtual_Camera.to_dict() if hasattr(self.Virtual_Camera, "to_dict") else str(self.Virtual_Camera),
-            "VirtualCameraAddress": self._virtual_camera_address.to_dict() if hasattr(self._virtual_camera_address, "to_dict") else str(self._virtual_camera_address)
+            "primary_uid": self._primary_uid,
+            "otp_manager": self._credentials.to_dict(),  # <— simplified
+            "linked_device": self._link_device,
+            "mediamtx_streaming_server": self._mediamtx_streaming_server.to_dict(),
+            "MYCAM_config": self._MYCAM_config.to_dict(),
+            "MYCAM_virtual_camera_path": self._MYCAM_virtual_camera_path,
+            "cameras": [cam.to_dict() for cam in self._CAMERAS],
+            "current_channel": self._current,
+            "processing_type": self._processing_type.name if hasattr(self, "_processing_type") else None,
+            "ffmpeg_output_type": self._ffmpeg_output_type.name if hasattr(self, "_ffmpeg_output_type") else None,
         }
-        

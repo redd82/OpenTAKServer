@@ -4,15 +4,17 @@ from flask import Blueprint, request, jsonify, Response, json
 from opentakserver.defaultconfig import DefaultConfig # <- this is how OTS loads configuration values centrally
 #import requests
 # video object
-from opentakserver.blueprints.TakatVideo_api.Video_Object import Video_Object as Video_Object
+from opentakserver.blueprints.TakatVideo_api.Video_Object import Video_Object_v3 as Video_Object_v3
+from opentakserver.blueprints.TakatVideo_api.Video_Object import FFMPEG_Command_Builder_v3 as FFMPEG
+from opentakserver.blueprints.TakatVideo_api.Video_Object import MediaMTX_Path_Config_v3 as PConfig
 #util 
 from opentakserver.blueprints.TakatVideo_api.util import Safe_Link as Link  # safe hyperlink object
 #Global List
-from opentakserver.blueprints.TakatVideo_api.List_Video_Objects import VIDEO_OBJECTS, add_video_object, remove_video_object_by_uid, get_video_object_by_uid,get_video_object_by_uid_and_otp, video_objects_to_dict
+#from opentakserver.blueprints.TakatVideo_api.List_Video_Objects import VIDEO_OBJECTS, add_video_object, remove_video_object_by_uid, get_video_object_by_uid,get_video_object_by_uid_and_otp, video_objects_to_dict
 
 # --- ThreadPoolExecutor configuration ---
 from concurrent.futures import ThreadPoolExecutor
-MAX_STREAM_THREADS = 25                                                 #hard coded limit to garantuee performance
+MAX_STREAM_THREADS = 25        #hard coded limit to garantuee performance
 stream_executor = ThreadPoolExecutor(max_workers=MAX_STREAM_THREADS)
 
 # runtime setup, call via TAKAT/Setup 
@@ -36,33 +38,33 @@ TAKAT_commercial_text_overlay = "TAKAT.NL - %Y-%m-%d %H:%M:%S - TAKAT.NL"  # Def
 # register
 video_bp = Blueprint('Takat_Video_API', __name__)
 
-Debug = True
 Setup_Lock = False  # Lock to prevent multiple setups during runtime
+
+
 
 @video_bp.route('/Register', methods=['POST'])
 def register_camera():
-    # create Video_Object from request data
-    # create MediamTX path
-    # Create virtual camera path
-    # Add to managed object list
-    #if all went well, return 200 OK with path to camera stream and otp
-    #mandatory
-    pass
-    
+    #only work f the server is setup
+    if Setup_Lock == True:
+        #if free serer version add commercial text overlay to cam config.
+        
+        # create Video_Object from request data
+        # Add to managed object list
+        #if all went well, return 200 OK with path to camera stream and otp
+        return jsonify({"Develper":"Not implimented"}), 200
+    else: return jsonify({"Develper":"Sorry, server not setup yet"}), 404
+
     
 @video_bp.route('/Unregister', methods=['POST'])
 def unregister_camera():
-    #data = request.get_json()
-    #otp = data.get("otp")
-    #uid = data.get("uid")
-    #first check if we have the uid/otp comb (otp is password)
-    #get_video_object_by_uid_and_otp(otp=otp, uid=uid)
-    #if so load video object
-    # stop mitm
-    # remove mediamtx path
-    # remove video object
-    # say bye to user.
-    pass
+    #only work f the server is setup
+    if Setup_Lock == True:
+        # stop mitm
+        # remove mediamtx path
+        # remove video object
+        # say bye to user.
+        return jsonify({"Develper":"Not implimented"}), 200
+    else: return jsonify({"Develper":"Sorry, server not setup yet"}), 404
 
     
 @video_bp.route('/ServerSetup', methods=['POST'])
@@ -169,7 +171,7 @@ def ServerSetup():
 def Rick():
     return jsonify({
         "status":"unauthorized",
-        "reason": "Unexpected activity detected",
+        "reason":"Unexpected activity detected",
         "rick":"never gonna give you up",
         "roll":"never gonna let you down",
         "url":"https://www.youtube.com/watch/?v=dQw4w9WgXcQ",
@@ -178,10 +180,12 @@ def Rick():
     }), 403
     
     
+    
+    
 @video_bp.route('/Test', methods=['POST']) 
 def Test():
     #temp lock to avoid idiots
-    temp = True
+    temp = False
     if temp == True:
         return jsonify({"Develper":"Getting Coffee, back in 30."}), 403
     
@@ -189,43 +193,38 @@ def Test():
     allowed = ["http", "https", "rtsp"]
     try:     
         # Create Link objects (LAN/INET)
-        Source_Cam_external = Link(host="esp32-cam.net", port=80, allowed_protocols=allowed, protocol="rtsp", path="mjpeg")
-        Source_Cam_local= Link(host="192.0.0.1", port=80, allowed_protocols=allowed, protocol="rtsp", path="mjpeg")
+        Source_Cam = Link(host="esp32-cam.net", port=80, allowed_protocols=allowed, protocol="rtsp", path="mjpeg")
+        Takat_API= Link(host="192.0.0.1", port=80, allowed_protocols=allowed, protocol="rtsp", path="mjpeg")
         OTS_Server_Local = Link(host="192.168.18.129", protocol="http")
         OTS_Server_External = Link (host="OTS.Takat.NL", protocol="http", port=80)
-        MediaMTX_Local = Link(host="192.168.18.132", protocol="http", port="8443")
-        MediaMTX_External = Link(host="Media.Takat.nl", port="8443", allowed_protocols=allowed, protocol="rtsp")
+        MediaMTX_Stream = Link(host="192.168.18.132", protocol="rtsp", allowed_protocols=allowed, port=8443)
+        MediaMTX_API = Link(host="192.168.18.132", port=9997, allowed_protocols=allowed, protocol="http")
         Local = True
-        Uid = 12345
-        linked_UID = 54321
+        Uid = "12345"
+        Source_Cam_UID= "3451234"
+        linked_UID = "54321"
+        Otp ="helloworld"
 
-        #some mediamtx config
-        path_config = {
-            "source": "publisher",
-            "fallback": "rtsp://some/fallback/url",
-            "record": True,
-        }
-        
-        # Create the Video_Object
-        vo = Video_Object(
-            Camera_UID=Uid,
-            Linked_UID= linked_UID,
-            Source_Camera_Lan=Source_Cam_local,
-            Source_Camera_Inet=Source_Cam_external,
-            OTS_Server_Lan=OTS_Server_Local,
-            OTS_Server_Inet=OTS_Server_External,
-            MediaMTX_Inet=MediaMTX_External,
-            MediaMTX_Lan=MediaMTX_Local,
-            Local_Connections=Local
+        camera_config = PConfig(
+            name=Uid,             # Primary UID or a descriptive name
+            source=f"testing.com/{Source_Cam_UID}" # The source camera UID
         )
-        
+        # Create the Video_Object_v3
+        video_obj = Video_Object_v3(    source_camera=Source_Cam,                  # Link to the source camera
+                                        mediamtx_server_api=MediaMTX_API,          # MediaMTX API
+                                        takat_server_api=Takat_API,                # Takat/OTS API
+                                        path_config=camera_config,                 # MediaMTX path config
+                                        mediamtx_server_stream=MediaMTX_Stream,    # MediaMTX streaming server     
+                                        linked_device=linked_UID,                  # Linked device UID
+                                        virtual_camera_uid=Uid,                    # Virtual camera UID for this object
+                                        source_camera_uid=Source_Cam_UID,          # Source camera UID
+                                        primary_uid=Uid,                           # Primary UID for this Video Object
+                                        otp=Otp                                    # OTP for authentication
+                                    )
+        return jsonify(video_obj.to_dict()), 200
 
-        #create mediamtx path from video object
-        vo.MediaMTX_API.add_path(config= path_config)
-        #add video object to global list
-        add_video_object(vo)
-        
-        return jsonify(video_objects_to_dict()),200
+        #return jsonify({"placeholder":"data"}), 200
+        #return jsonify(video_object()),200
         # Return as JSON using to_dict()
         #return jsonify(vo.to_dict()), 200
 
