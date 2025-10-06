@@ -1,36 +1,13 @@
 {
-    "python-envs.defaultEnvManager": "ms-python.python:system",
     "python.defaultInterpreterPath": "/home/takusr/.opentakserver_venv/bin/python",
+    "python.envFile": "${workspaceFolder}/.env",
     "python.terminal.activateEnvironment": true,
-    "python.linting.enabled": true,
-    "python.linting.flake8Enabled": true,
-    "python.formatting.provider": "black",
     "editor.formatOnSave": true,
     "python.testing.pytestEnabled": true,
     "python.testing.pytestArgs": [
         "tests"
     ],
-    "python.analysis.exclude": [
-        "/sys/**",
-        "/usr/**",
-        "/var/**",
-        "/proc/**",
-        "/dev/**",
-        "/tmp/**",
-        "/run/**",
-        "/boot/**",
-        "/lib/**",
-        "/lib64/**",
-        "/opt/**",
-        "/mnt/**",
-        "/media/**",
-        "**/node_modules",
-        "**/__pycache__",
-        "**/.pytest_cache",
-        "**/.mypy_cache",
-        "**/*.egg-info"
-    ],
-    "python.analysis.autoSearchPaths": false,
+    "python.analysis.indexing": true,    
     "files.watcherExclude": {
         "**/node_modules/**": true,
         "**/.git/objects/**": true,
@@ -48,7 +25,13 @@
         "/sbin/**": true,
         "/boot/**": true,
         "/etc/**": true,
-        "/opt/**": true
+        "/opt/**": true,
+        "**/.git/**": true,
+        "**/.venv/**": true,
+        "**/venv/**": true,
+        "**/__pycache__/**": true,
+        "**/migrations/**": true,
+        "**/proto/**": true
     },
     "files.exclude": {
         "/sys": true,
@@ -64,5 +47,19 @@
         "/boot": true,
         "/etc": true,
         "/opt": true
-    }
+    },
+    "python.analysis.packageIndexDepths": [
+        {
+            "name": "",
+            "depth": 2,
+            "includeAllSymbols": false
+        }
+    ],
+    "python-envs.pythonProjects": [
+        {
+            "path": "",
+            "envManager": "ms-python.python:system",
+            "packageManager": "ms-python.python:pip"
+        }
+    ]
 }
