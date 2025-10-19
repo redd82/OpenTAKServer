@@ -3,11 +3,15 @@ import os
 import datetime
 import hashlib
 import traceback
+import threading
+import time
+import subprocess
 from shutil import copyfile
 import sqlalchemy.exc
 from sqlalchemy import select, delete
 
 from flask import current_app as app, request, Blueprint, jsonify
+from flask_security import roles_required
 from flask_security.decorators import auth_required
 from flask_login import current_user
 
@@ -21,8 +25,20 @@ from opentakserver.blueprints.TakatApiExtensions_api.certificate_authority impor
 
 api_blueprint = Blueprint('takat_api_blueprint', __name__)
 
+def _restart_self(delay: float = 1.0) -> None:
+    def _runner():
+        time.sleep(delay)
+        logger.info("Self-terminating for restart")
+        os._exit(1)
+    threading.Thread(target=_runner, daemon=True).start()
 
 # TAKAT additional endpoints
+@api_blueprint.route("/api/system/restart", methods=["POST"])
+@roles_required("administrator")
+def restart_service():
+    _restart_self()
+    return {"success": True, "message": "Restart queued"}, 202
+
 @api_blueprint.route('/api/usereuds', methods=['POST'])
 @auth_required()
 def get_usereuds():
