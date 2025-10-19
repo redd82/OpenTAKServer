@@ -1,21 +1,19 @@
 from flask import Blueprint, request, jsonify, Response, json
 
-# Import the default configuration
-from opentakserver.defaultconfig import DefaultConfig # <- this is how OTS loads configuration values centrally
+
 #import requests
 # video object
-from opentakserver.blueprints.TakatVideo_api.Video_Object import Video_Object_v3 as Video_Object_v3
-from opentakserver.blueprints.TakatVideo_api.Video_Object import FFMPEG_Command_Builder_v3 as FFMPEG
-from opentakserver.blueprints.TakatVideo_api.Video_Object import MediaMTX_Path_Config_v3 as PConfig
+
 #util 
 from opentakserver.blueprints.TakatVideo_api.util import Safe_Link as Link  # safe hyperlink object
+from opentakserver.blueprints.TakatVideo_api.util import Unified_Enum_Inputs as Inputs  # safe hyperlink object
+from opentakserver.blueprints.TakatVideo_api.Video_Object import CameraObjectV4 as CameraObjectV4
+from opentakserver.blueprints.TakatVideo_api.Video_Object import MediaMTXPathConfigV4 as MediaMTXPathConfigV4
+from opentakserver.blueprints.TakatVideo_api.Video_Object import MediaMTXAPIInterfaceV4 as IfaceV4
+
 #Global List
 #from opentakserver.blueprints.TakatVideo_api.List_Video_Objects import VIDEO_OBJECTS, add_video_object, remove_video_object_by_uid, get_video_object_by_uid,get_video_object_by_uid_and_otp, video_objects_to_dict
 
-# --- ThreadPoolExecutor configuration ---
-from concurrent.futures import ThreadPoolExecutor
-MAX_STREAM_THREADS = 25        #hard coded limit to garantuee performance
-stream_executor = ThreadPoolExecutor(max_workers=MAX_STREAM_THREADS)
 
 # runtime setup, call via TAKAT/Setup 
 # should be repeated after any/all server reboots.
@@ -181,52 +179,64 @@ def Rick():
     
     
     
-    
-@video_bp.route('/Test', methods=['POST']) 
+@video_bp.route('/Test', methods=['POST'])
 def Test():
-    #temp lock to avoid idiots
-    temp = False
-    if temp == True:
-        return jsonify({"Develper":"Getting Coffee, back in 30."}), 403
-    
-    
+    # Temporary lock to avoid accidental calls
+    if False:  # Change to True if you want to block
+        return jsonify({"Developer": "Getting Coffee, back in 30."}), 403
+
     allowed = ["http", "https", "rtsp"]
-    try:     
-        # Create Link objects (LAN/INET)
+
+    try:
+        # ----------------------
+        # Setup Links
+        # ----------------------
         Source_Cam = Link(host="esp32-cam.net", port=80, allowed_protocols=allowed, protocol="rtsp", path="mjpeg")
-        Takat_API= Link(host="192.0.0.1", port=80, allowed_protocols=allowed, protocol="rtsp", path="mjpeg")
-        OTS_Server_Local = Link(host="192.168.18.129", protocol="http")
-        OTS_Server_External = Link (host="OTS.Takat.NL", protocol="http", port=80)
         MediaMTX_Stream = Link(host="192.168.18.132", protocol="rtsp", allowed_protocols=allowed, port=8443)
         MediaMTX_API = Link(host="192.168.18.132", port=9997, allowed_protocols=allowed, protocol="http")
-        Local = True
-        Uid = "12345"
-        Source_Cam_UID= "3451234"
-        linked_UID = "54321"
-        Otp ="helloworld"
 
-        camera_config = PConfig(
-            name=Uid,             # Primary UID or a descriptive name
-            source=f"testing.com/{Source_Cam_UID}" # The source camera UID
+        # ----------------------
+        # Camera config
+        # ----------------------
+        Uid = "123879123sdfefwsfsgrwr7456"
+        Source_Cam_UID = "3451234"
+        Virtual_Cam_UID = "virt_cam_01"
+        otp ="12sdf324revf434"
+
+        api = IfaceV4(path_uid=Uid, link=MediaMTX_API)
+        camera_config =  MediaMTXPathConfigV4(
+            name=Uid,
+            source=f"testing.com/{Source_Cam_UID}"
         )
-        # Create the Video_Object_v3
-        video_obj = Video_Object_v3(    source_camera=Source_Cam,                  # Link to the source camera
-                                        mediamtx_server_api=MediaMTX_API,          # MediaMTX API
-                                        takat_server_api=Takat_API,                # Takat/OTS API
-                                        path_config=camera_config,                 # MediaMTX path config
-                                        mediamtx_server_stream=MediaMTX_Stream,    # MediaMTX streaming server     
-                                        linked_device=linked_UID,                  # Linked device UID
-                                        virtual_camera_uid=Uid,                    # Virtual camera UID for this object
-                                        source_camera_uid=Source_Cam_UID,          # Source camera UID
-                                        primary_uid=Uid,                           # Primary UID for this Video Object
-                                        otp=Otp                                    # OTP for authentication
-                                    )
-        return jsonify(video_obj.to_dict()), 200
+        
+        status, _ = api.create_path(camera_config)
 
-        #return jsonify({"placeholder":"data"}), 200
-        #return jsonify(video_object()),200
-        # Return as JSON using to_dict()
-        #return jsonify(vo.to_dict()), 200
+        #        uid:str, link: Link,
+
+
+        
+        return jsonify({"cameraobject": ""}), 200
+        # ----------------------
+        # Initialize MediaMTX API
+        # ----------------------
+        #media = MTX(
+        #    uid=Uid,
+        #    link=MediaMTX_API
+        #)
+
+        # ----------------------
+        # Create the path safely
+        # ----------------------
+        #status = media.Create_Path()  # Minimal payload to avoid recursion
+
+        # ----------------------
+        # Return info to client
+        # ----------------------
+        #return jsonify({
+        #    "media_status_code": status,
+        #    "media_info": media.to_dict(),
+        #    "camera_config": camera_config.to_dict()
+        #}), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
