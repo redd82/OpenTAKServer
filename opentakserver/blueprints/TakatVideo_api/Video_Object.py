@@ -1,13 +1,15 @@
 import json, copy
-from typing import Optional, Dict, Any, Tuple, Union
 from enum import Enum
-import re
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from urllib.parse import urlencode
-import logging
+import json
+from typing import Any, Dict, Optional, Tuple, List, Union
+
+
+
 #from requests.adapters import HTTPAdapter, Retry
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -28,184 +30,172 @@ from opentakserver.blueprints.TakatVideo_api.util import Unified_Enum_Inputs as 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mediamtx API path configuration object
 # ─────────────────────────────────────────────────────────────────────────────   
-import json
-import logging
-from typing import Any, Dict, Optional, Tuple, List, Union
-
 
 class MediaMTXPathConfigV5:
 
     def __init__(self, name: str, source: str):
+        
         # mandatory fields
         self._name = name
         self._source = source
         
-        # boolean fields with default values
-        self._runOnReadRestart = False
-        self._runOnReadyRestart = False
-        self._runOnDemandRestart = False
-        self._runOnInitRestart = False
-        self._rpiCameraTextOverlayEnable = False
-        self._rpiCameraHDR = False
-        self._rpiCameraHFlip = False
-        self._rpiCameraVFlip = False
-        self._rpiCameraSecondary = False
-        self._rtspAnyPort = False
-        self._overridePublisher = False
+        # optional fields with defaults
+        self._sourceFingerprint = ""
+        self._sourceOnDemand = False
+        self._sourceOnDemandStartTimeout = ""
+        self._sourceOnDemandCloseAfter = ""
+        self._maxReaders = 0
+        self._srtReadPassphrase = ""
+        self._fallback = ""
         self._useAbsoluteTimestamp = False
         self._record = False
-        # int fields with default int values
-        self._maxReaders = 0
-        self._rpiCameraMJPEGQuality = 0
-        self._rpiCameraIDRPeriod = 0
-        self._rpiCameraBitrate = 0
-        self._rpiCameraFlickerPeriod = 0
-        self._rpiCameraLensPosition = 0
-        self._rpiCameraFPS = 0
-        self._rpiCameraGain = 0
-        self._rpiCameraEV = 0
-        self._rpiCameraShutter = 0
+        self._recordPath = ""
+        self._recordFormat = ""
+        self._recordPartDuration = ""
+        self._recordMaxPartSize = ""
+        self._recordSegmentDuration = ""
+        self._recordDeleteAfter = ""
+        self._overridePublisher = False
+        self._srtPublishPassphrase = ""
+        self._rtspTransport = ""
+        self._rtspAnyPort = False
+        self._rtspRangeType = ""
+        self._rtspRangeStart = ""
+        self._rtspUDPReadBufferSize = 0
+        self._mpegtsUDPReadBufferSize = 0
+        self._rtpSDP = ""
+        self._rtpUDPReadBufferSize = 0
+        self._sourceRedirect = ""
+        self._rpiCameraCamID = 0
+        self._rpiCameraSecondary = False
+        self._rpiCameraWidth = 0
+        self._rpiCameraHeight = 0
+        self._rpiCameraHFlip = False
+        self._rpiCameraVFlip = False
         self._rpiCameraBrightness = 0
         self._rpiCameraContrast = 0
         self._rpiCameraSaturation = 0
         self._rpiCameraSharpness = 0
-        self._rpiCameraCamID = 0
-        self._rpiCameraWidth = 0
-        self._rpiCameraHeight = 0
-        self._rtpUDPReadBufferSize = 0
-        self._rtspUDPReadBufferSize = 0
-        self._mpegtsUDPReadBufferSize = 0
-        # list fields with default list values
-        self._rpiCameraAWBGains=[0,0]
+        self._rpiCameraExposure = ""
+        self._rpiCameraAWB = ""
+        self._rpiCameraAWBGains = [0, 0]
+        self._rpiCameraDenoise = ""
+        self._rpiCameraShutter = 0
+        self._rpiCameraMetering = ""
+        self._rpiCameraGain = 0
+        self._rpiCameraEV = 0
+        self._rpiCameraROI = ""
+        self._rpiCameraHDR = False
+        self._rpiCameraTuningFile = ""
+        self._rpiCameraMode = ""
+        self._rpiCameraFPS = 0
+        self._rpiCameraAfMode = ""
+        self._rpiCameraAfRange = ""
+        self._rpiCameraAfSpeed = ""
+        self._rpiCameraLensPosition = 0
+        self._rpiCameraAfWindow = ""
+        self._rpiCameraFlickerPeriod = 0
+        self._rpiCameraTextOverlayEnable = False
+        self._rpiCameraTextOverlay = ""
+        self._rpiCameraCodec = ""
+        self._rpiCameraIDRPeriod = 0
+        self._rpiCameraBitrate = 0
+        self._rpiCameraHardwareH264Profile = ""
+        self._rpiCameraHardwareH264Level = ""
+        self._rpiCameraSoftwareH264Profile = ""
+        self._rpiCameraSoftwareH264Level = ""
+        self._rpiCameraMJPEGQuality = 0
+        self._runOnInit = ""
+        self._runOnInitRestart = False
+        self._runOnDemand = ""
+        self._runOnDemandRestart = False
+        self._runOnDemandStartTimeout = ""
+        self._runOnDemandCloseAfter = ""
+        self._runOnUnDemand = ""
+        self._runOnReady = ""
+        self._runOnReadyRestart = False
+        self._runOnNotReady = ""
+        self._runOnRead = ""
+        self._runOnReadRestart = False
+        self._runOnUnread = ""
+        self._runOnRecordSegmentCreate = ""
+        self._runOnRecordSegmentComplete = ""
+
+                
+    # Boolean Helper method
+    def _normalize_bool(self, val):
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, int):
+            return val != 0
+        if isinstance(val, str):
+            val_norm = val.strip().lower()
+            if val_norm in ("1", "true", "yes", "on"):
+                return True
+            elif val_norm in ("0", "false", "no", "off"):
+                return False
+        raise ValueError(f"Invalid boolean value: {val!r} (expected bool, int, or 'true/false'-like string)")
+
+    # Boolean fields getters/setters
+    def runOnReadRestart(self, value=None):
+        if value is None:
+            return self._runOnReadRestart
+        self._runOnReadRestart = self._normalize_bool(value)
+    def runOnReadyRestart(self, value=None):
+        if value is None:
+            return self._runOnReadyRestart
+        self._runOnReadyRestart = self._normalize_bool(value)
+    def runOnDemandRestart(self, value=None):
+        if value is None:
+            return self._runOnDemandRestart
+        self._runOnDemandRestart = self._normalize_bool(value)
+    def runOnInitRestart(self, value=None):
+        if value is None:
+            return self._runOnInitRestart
+        self._runOnInitRestart = self._normalize_bool(value)
+    def rpiCameraTextOverlayEnable(self, value=None):
+        if value is None:
+            return self._rpiCameraTextOverlayEnable
+        self._rpiCameraTextOverlayEnable = self._normalize_bool(value)
+    def rpiCameraHDR(self, value=None):
+        if value is None:
+            return self._rpiCameraHDR
+        self._rpiCameraHDR = self._normalize_bool(value)
+    def rpiCameraHFlip(self, value=None):
+        if value is None:
+            return self._rpiCameraHFlip
+        self._rpiCameraHFlip = self._normalize_bool(value)
+    def rpiCameraVFlip(self, value=None):
+        if value is None:
+            return self._rpiCameraVFlip
+        self._rpiCameraVFlip = self._normalize_bool(value)
+    def rpiCameraSecondary(self, value=None):
+        if value is None:
+            return self._rpiCameraSecondary
+        self._rpiCameraSecondary = self._normalize_bool(value)
+    def rtspAnyPort(self, value=None):
+        if value is None:
+            return self._rtspAnyPort
+        self._rtspAnyPort = self._normalize_bool(value)
+    def SourceOnDemand(self, value=None):
+        if value is None:
+            return self._sourceOnDemand
+        self._sourceOnDemand = self._normalize_bool(value)
+    def overridePublisher(self, value=None):
+        if value is None:
+            return self._overridePublisher
+        self._overridePublisher = self._normalize_bool(value)
+    def useAbsoluteTimestamp(self, value=None):
+        if value is None:
+            return self._useAbsoluteTimestamp
+        self._useAbsoluteTimestamp = self._normalize_bool(value)
+    def record(self, value=None):
+        if value is None:
+            return self._record
+        self._record = self._normalize_bool(value)
 
     
-    # boolean fields getters/setters
-    def runOnReadRestart(self, input=None):
-        if input == None: return self._runOnReadRestart
-        if input in ("1", "true", "yes", "on"): self._runOnReadRestart= True
-        elif input in ("0", "false", "no", "off"): self._runOnReadRestart= False
-    def runOnReadyRestart(self, input=None):
-        if input == None: return self._runOnReadyRestart
-        if input in ("1", "true", "yes", "on"): self._runOnReadyRestart= True
-        elif input in ("0", "false", "no", "off"): self._runOnReadyRestart= False
-    def runOnDemandRestart(self, input=None): 
-        if input == None: return self._runOnReadRestart
-        if input in ("1", "true", "yes", "on"): self._runOnReadRestart= True
-        elif input in ("0", "false", "no", "off"): self._runOnReadRestart= False
-    def runOnInitRestart(self, input=None):
-        if input == None: return self._runOnInitRestart
-        if input in ("1", "true", "yes", "on"): self._runOnInitRestart= True
-        elif input in ("0", "false", "no", "off"): self._runOnInitRestart= False
-    def rpiCameraTextOverlayEnable(self, input=None):
-        if input == None: return self._rpiCameraTextOverlayEnable
-        if input in ("1", "true", "yes", "on"): self._rpiCameraTextOverlayEnable= True
-        elif input in ("0", "false", "no", "off"): self._rpiCameraTextOverlayEnable= False
-    def rpiCameraHDR(self, input=None):
-        if input == None: return self._rpiCameraHDR
-        if input in ("1", "true", "yes", "on"): self._rpiCameraHDR= True
-        elif input in ("0", "false", "no", "off"): self._rpiCameraHDR= False
-    def rpiCameraHFlip(self, input=None):
-        if input == None: return self._rpiCameraHFlip
-        if input in ("1", "true", "yes", "on"): self._rpiCameraHFlip= True
-        elif input in ("0", "false", "no", "off"): self._rpiCameraHFlip= False
-    def rpiCameraVFlip(self, input=None):
-        if input == None: return self._rpiCameraVFlip
-        if input in ("1", "true", "yes", "on"): self._rpiCameraVFlip= True
-        elif input in ("0", "false", "no", "off"): self._rpiCameraVFlip= False
-    def rpiCameraSecondary(self, input=None):
-        if input == None: return self._rpiCameraSecondary
-        if input in ("1", "true", "yes", "on"): self._rpiCameraSecondary= True
-        elif input in ("0", "false", "no", "off"): self._rpiCameraSecondary= False
-    def rtspAnyPort(self, input=None):
-        if input == None: return self._rtspAnyPort
-        if input in ("1", "true", "yes", "on"): self._rtspAnyPort= True
-        elif input in ("0", "false", "no", "off"): self._rtspAnyPort= False
-    def overridePublisher(self, input=None):
-        if input == None: return self._overridePublisher
-        if input in ("1", "true", "yes", "on"): self._overridePublisher= True
-        elif input in ("0", "false", "no", "off"): self._overridePublisher= False
-    def useAbsoluteTimestamp(self, input=None):
-        if input == None: return self._useAbsoluteTimestamp
-        if input in ("1", "true", "yes", "on"): self._useAbsoluteTimestamp= True
-        elif input in ("0", "false", "no", "off"): self._useAbsoluteTimestamp= False
-    def record(self, input=None):
-        if input == None: return self._record
-        if input in ("1", "true", "yes", "on"): self._record= True
-        elif input in ("0", "false", "no", "off"): self._record= False
-    
-        """
-            Boolean fields:
-            "runOnReadRestart": true,
-            "runOnReadyRestart": true,
-            "runOnDemandRestart": true,
-            "runOnInitRestart": true,
-            "rpiCameraTextOverlayEnable": true,
-            "rpiCameraHDR": true,             
-            "rpiCameraHFlip": true,
-            "rpiCameraVFlip": true,            
-            "rpiCameraSecondary": true,
-            "rtspAnyPort": true,
-            "overridePublisher": true,
-            "useAbsoluteTimestamp": true,
-            "record": true,"sourceOnDemand": true,
-        """
-    
-    
-        """
-        {
-            "name": "string",
-            "source": "string",
-            "sourceFingerprint": "string",
-            "sourceOnDemandStartTimeout": "string",
-            "sourceOnDemandCloseAfter": "string",
-            "srtReadPassphrase": "string",
-            "fallback": "string",
-            "recordPath": "string",
-            "recordFormat": "string",
-            "recordPartDuration": "string",
-            "recordMaxPartSize": "string",
-            "recordSegmentDuration": "string",
-            "recordDeleteAfter": "string",
-            "srtPublishPassphrase": "string",
-            "rtspTransport": "string",
-            "rtspRangeType": "string",
-            "rtspRangeStart": "string",
-            "rtpSDP": "string",
-            "sourceRedirect": "string",
-            "rpiCameraExposure": "string",
-            "rpiCameraAWB": "string",
-            "rpiCameraDenoise": "string",
-            "rpiCameraMetering": "string",
-            "rpiCameraROI": "string",
-            "rpiCameraTuningFile": "string",
-            "rpiCameraMode": "string",
-            "rpiCameraAfMode": "string",
-            "rpiCameraAfRange": "string",
-            "rpiCameraAfSpeed": "string",
-            "rpiCameraAfWindow": "string",
-            "rpiCameraTextOverlay": "string",
-            "rpiCameraCodec": "string",
-            "rpiCameraHardwareH264Profile": "string",
-            "rpiCameraHardwareH264Level": "string",
-            "rpiCameraSoftwareH264Profile": "string",
-            "rpiCameraSoftwareH264Level": "string",
-            "runOnInit": "string",
-            "runOnDemand": "string",
-            "runOnDemandStartTimeout": "string",
-            "runOnDemandCloseAfter": "string",
-            "runOnUnDemand": "string",
-            "runOnReady": "string",
-            "runOnNotReady": "string",
-            "runOnRead": "string",
-            "runOnUnread": "string",
-            "runOnRecordSegmentCreate": "string",
-            "runOnRecordSegmentComplete": "string"
-            
-
-            
-            "rpiCameraAWBGains": [0,0],
-            }
-        """
+    # int fields getters/setters
     def MaxReaders(self, value=None):
         """Maximum number of clients allowed to read/view this stream. (hardcoded to 1000) 0 = no limit."""
         if value == None: return self._maxReaders
@@ -300,101 +290,106 @@ class MediaMTXPathConfigV5:
             self._range_float(float(value[0]), 0.0, 8.0),
             self._range_float(float(value[1]), 0.0, 8.0)
         ]
-    
-    
-    
-    """
-RPi Camera String Settings with Mandatory Input Values
-------------------------------------------------------
-
-1. rpiCameraExposure
-   - Description: Camera exposure mode.
-   - Mandatory Inputs:
-       * "auto"        - Automatic exposure
-       * "night"       - Optimized for low-light conditions
-       * "nightpreview"- Enhanced preview in low-light
-       * "backlight"   - Compensates for strong backlighting
-       * "spotlight"   - Adjusts for spotlight conditions
-       * "sports"      - For fast-moving subjects
-       * "snow"        - Compensates for bright snow scenes
-       * "beach"       - Optimized for beach scenes
-       * "verylong"    - Extremely long exposures
-       * "fixedfps"    - Fixed frame rate exposure
-   - Note: "auto" allows the camera to adjust exposure automatically.
-
-2. rpiCameraAWB
-   - Description: Auto White Balance mode.
-   - Mandatory Inputs:
-       * "auto"        - Automatic white balance
-       * "sun"         - Daylight
-       * "cloudy"      - Overcast
-       * "shade"       - Shaded conditions
-       * "tungsten"    - Incandescent lighting
-       * "fluorescent" - Fluorescent lighting
-       * "incandescent"- Incandescent lighting
-       * "flash"       - Flash lighting
-       * "horizon"     - Horizon lighting
-   - Note: "auto" enables automatic white balance adjustment.
-
-3. rpiCameraMetering
-   - Description: Exposure metering mode.
-   - Mandatory Inputs:
-       * "average" - Average light metering
-       * "spot"    - Spot metering
-       * "backlit" - Backlit metering
-       * "matrix"  - Matrix metering
-   - Note: "average" uses the average light level across the frame.
-
-References:
-- Raspberry Pi Camera Documentation & Forums
-- Picamera2 GitHub Issues
-"""
-
-    
+    # mandatory fields getters/setters  
     def Name(self):
         return self._name
-    def Source(self):
-        return self._source
+    def Source(self, value=None):
+        if value is None: return self._source
+        else: self._source = value
+    # string fields getters/setters
     def SourceFingerprint(self, value=None):
-        pass
+        if value is None: return self._sourceFingerprint
+        else: self._sourceFingerprint = value
     def SourceOnDemandStartTimeout(self, value=None):
-        pass
+        if value is None: return self._sourceOnDemandStartTimeout
+        else: self._sourceOnDemandStartTimeout = value
     def SourceOnDemandCloseAfter(self, value=None):
-        pass
+        if value is None: return self._sourceOnDemandCloseAfter
+        else: self._sourceOnDemandCloseAfter = value
     def SrtReadPassphrase(self, value=None):
-        pass
+        if value is None: return self._srtReadPassphrase
+        else: self._srtReadPassphrase = value
     def Fallback(self, value=None):
-        pass
+        if value is None: return self._fallback
+        else: self._fallback = value
     def RecordPath(self, value=None):
-        pass
+        if value is None: return self._recordPath
+        else: self._recordPath = value
     def RecordFormat(self, value=None):
-        pass
+        if value is None: return self._recordFormat
+        else: self._recordFormat = value
     def RecordPartDuration(self, value=None):
-        pass
+        if value is None: return self._recordPartDuration
+        else: self._recordPartDuration = value
     def RecordMaxPartSize(self, value=None):
-        pass
+        if value is None: return self._recordMaxPartSize
+        else: self._recordMaxPartSize = value
     def RecordSegmentDuration(self, value=None):
-        pass
+        if value is None: return self._recordSegmentDuration
+        else: self._recordSegmentDuration = value
     def RecordDeleteAfter(self, value=None):
-        pass
+        if value is None: return self._recordDeleteAfter
+        else: self._recordDeleteAfter = value
     def SrtPublishPassphrase(self, value=None):
-        pass
+        if value is None: return self._srtPublishPassphrase
+        else: self._srtPublishPassphrase = value
     def RtspTransport(self, value=None):
-        pass
+        if value is None: return self._rtspTransport
+        else: self._rtspTransport = value
     def RtspRangeType(self, value=None):
-        pass
+        if value is None: return self._rtspRangeType
+        else: self._rtspRangeType = value
     def RtspRangeStart(self, value=None):
-        pass
+        if value is None: return self._rtspRangeStart
+        else: self._rtspRangeStart = value
     def RtpSDP(self, value=None):
-        pass
+        if value is None: return self._rtpSDP
+        else: self._rtpSDP = value  
     def SourceRedirect(self, value=None):
-        pass
+        if value is None: return self._sourceRedirect
+        else: self._sourceRedirect = value
     def RpiCameraExposure(self, value=None):
+        """rpiCameraExposure
+            - Description: Camera exposure mode.
+            - Mandatory Inputs:
+                * "auto"        - Automatic exposure
+                * "night"       - Optimized for low-light conditions
+                * "nightpreview"- Enhanced preview in low-light
+                * "backlight"   - Compensates for strong backlighting
+                * "spotlight"   - Adjusts for spotlight conditions
+                * "sports"      - For fast-moving subjects
+                * "snow"        - Compensates for bright snow scenes
+                * "beach"       - Optimized for beach scenes
+                * "verylong"    - Extremely long exposures
+                * "fixedfps"    - Fixed frame rate exposure
+            - Note: "auto" allows the camera to adjust exposure automatically.
+        """
+        if value is None: return self._rpiCameraExposure 
+        value = value.lower()
+        if value in ("auto", "sun", "cloudy", "shade", "tungsten", "fluorescent", "incandescent", "flash", "horizon"): self._rpiCameraExposure = value
+       
         pass
     def RpiCameraAWB(self, value=None):
-        pass
+        """rpiCameraAWB
+            - Description: Auto White Balance mode.
+            - Mandatory Inputs:
+                * "auto"        - Automatic white balance
+                * "sun"         - Daylight
+                * "cloudy"      - Overcast
+                * "shade"       - Shaded conditions
+                * "tungsten"    - Incandescent lighting
+                * "fluorescent" - Fluorescent lighting
+                * "incandescent"- Incandescent lighting
+                * "flash"       - Flash lighting
+                * "horizon"     - Horizon lighting
+            - Note: "auto" enables automatic white balance adjustment."""
+            
+        if value is None: return self._rpiCameraAWB  
+        value = value.lower() 
+        if value in ("auto", "sun", "cloudy", "shade", "tungsten", "fluorescent", "incandescent", "flash", "horizon"): self._rpiCameraAWB = value        
     def RpiCameraDenoise(self, value=None):
-        pass
+        if value is None: return self._rpiCameraDenoise
+        else: self._rpiCameraDenoise = value     
     def RpiCameraMetering(self, value=None):
         """rpiCameraMetering
             - Description: Exposure metering mode.
@@ -405,81 +400,153 @@ References:
                 * "matrix"  - Matrix metering
             - Note: "average" uses the average light level across the frame.
         """
-        if value in ("1", "true", "yes", "on"): 
+        if value is None: return self._rpiCameraMetering    
+        if value.lower() in ("average", "spot", "backlit", "matrix"): self._rpiCameraMetering = value
         
         pass
     def RpiCameraROI(self, value=None):
-        pass
+        # unused for now; takes a four float input for x/y top left and bottom right corner 
+        # but mediamtx api wants this as a string
+        return self._rpiCameraROI
+    
     def RpiCameraTuningFile(self, value=None):
-        pass
+        if value is None: return self._rpiCameraTuningFile
+        else: self._rpiCameraTuningFile = value
     def RpiCameraMode(self, value=None):
-        pass
+        if value is None: return self._rpiCameraMode
+        else: self._rpiCameraMode = value
     def RpiCameraAfMode(self, value=None):
-        pass
+        if value is None: return self._rpiCameraAfMode
+        else: self._rpiCameraAfMode = value
     def RpiCameraAfRange(self, value=None):
-        pass
+        if value is None: return self._rpiCameraAfRange
+        else: self._rpiCameraAfRange = value
     def RpiCameraAfSpeed(self, value=None):
-        pass
+        if value is None: return self._rpiCameraAfSpeed
+        else: self._rpiCameraAfSpeed = value    
     def RpiCameraAfWindow(self, value=None):
-        pass
+        if value is None: return self._rpiCameraAfWindow
+        else: self._rpiCameraAfWindow = value
     def RpiCameraTextOverlay(self, value=None):
-        pass
-
+        if value is None: return self._rpiCameraTextOverlay
+        else: self._rpiCameraTextOverlay = value
     def RpiCameraCodec(self, value=None):
-        pass
-
+        if value is None: return self._rpiCameraCodec
+        else: self._rpiCameraCodec = value
     def RpiCameraHardwareH264Profile(self, value=None):
-        pass
-
+        if value is None: return self._rpiCameraHardwareH264Profile
+        else: self._rpiCameraHardwareH264Profile = value
     def RpiCameraHardwareH264Level(self, value=None):
-        pass
-
+        if value is None: return self._rpiCameraHardwareH264Level
+        else: self._rpiCameraHardwareH264Level = value
     def RpiCameraSoftwareH264Profile(self, value=None):
-        pass
-
+        if value is None: return self._rpiCameraSoftwareH264Profile
+        else: self._rpiCameraSoftwareH264Profile = value
     def RpiCameraSoftwareH264Level(self, value=None):
-        pass
-
+        if value is None: return self._rpiCameraSoftwareH264Level
+        else: self._rpiCameraSoftwareH264Level = value
     def RunOnInit(self, value=None):
-        pass
-
+        if value is None: return self._runOnInit
+        else: self._runOnInit = value
     def RunOnDemand(self, value=None):
-        pass
-
+        if value is None: return self._runOnDemand
+        else: self._runOnDemand = value
     def RunOnUnDemand(self, value=None):
-        pass
-
+        if value is None: return self._runOnUnDemand
+        else: self._runOnUnDemand = value
     def RunOnReady(self, value=None):
-        pass
-
+        if value is None: return self._runOnReady
+        else: self._runOnReady = value
     def RunOnNotReady(self, value=None):
-        pass
-
+        if value is None: return self._runOnNotReady
+        else: self._runOnNotReady = value
     def RunOnRead(self, value=None):
-        pass
-
+        if value is None: return self._runOnRead
+        else: self._runOnRead = value
     def RunOnUnread(self, value=None):
-        pass
-
+        if value is None: return self._runOnUnread
+        else: self._runOnUnread = value
     def RunOnRecordSegmentCreate(self, value=None):
-        pass
-
+        if value is None: return self._runOnRecordSegmentCreate
+        else: self._runOnRecordSegmentCreate = value
     def RunOnRecordSegmentComplete(self, value=None):
-        pass
+        if value is None: return self._runOnRecordSegmentComplete
+        else: self._runOnRecordSegmentComplete = value
+        
 
     # helper methods
     def _range(self, value: int, minimum: int, maximum: int) -> int: return max(minimum, min(value, maximum))
     def _range_float(self, value: float, minimum: float, maximum: float) -> float: return max(minimum, min(value, maximum))
+    
+    def PayloadCreatePath(self) -> Dict[str, Any]:
+        """
+        Create a blankdictionary payload for MediaMTX API path creation.
+        """
+        payload = {}
+
+        return payload
+    
+    def PayloadUpdatePath(self) -> Dict[str, Any]:
+        """
+        Create a dictionary payload for MediaMTX API path creation,
+        including all self._ attributes except `_name`.
+        """
+        payload = {}
+        for attr, value in self.__dict__.items():
+            if attr.startswith("_") and attr != "_name":
+                # Remove leading underscore for the dictionary key
+                key = attr[1:]
+                payload[key] = value
+        return payload
  
+    def SyncFromDict(self, data: Dict[str, Any]) -> None:
+        """
+        Update the object's attributes based on a given dictionary.
+        Uses the object's setter methods if they exist, otherwise updates the internal attribute directly.
+        This ensures type checking and range validation are applied.
+        """
+        try:
+            for key, value in data.items():
+                # Try to get the setter method (same name as key)
+                setter = getattr(self, key, None)
+
+                if callable(setter):
+                    try:
+                        setter(value)  # Use setter for validation
+                    except Exception as e:
+                        raise ValueError(f"MediaMTXPathConfigV5: Warning: could not set {key}={value}: {e}")
+                else:
+                    # Fallback: directly set the _ attribute if it exists
+                    attr_name = f"_{key}"
+                    if hasattr(self, attr_name):
+                        setattr(self, attr_name, value)
+                    else:
+                        raise ValueError(f"MediaMTXPathConfigV5:Warning: attribute {key} does not exist on object")
+        except Exception as e:
+            raise ValueError(f"MediaMTXPathConfigV5: Error syncing from dict: {e}")
  
- 
- 
- 
- 
- 
- 
- 
- 
+    def SyncFromJson(self, data: dict) -> None:
+        """
+        Update the config from a JSON/dict returned by MediaMTX API.
+        Maps API fields to internal attributes, using existing setters when possible.
+        """
+        try:
+            if not isinstance(data, dict):
+                raise ValueError("MediaMTXPathConfigV5: SyncFromJson expects a dictionary.")
+
+            for key, value in data.items():
+                # Skip name (mandatory, shouldn't be overwritten)
+                if key == "name":
+                    continue
+                try:
+                    # Use SyncFromDict to handle all other existing attributes
+                    self.SyncFromDict({key: value})
+                except ValueError:
+                    # ignore unknown fields
+                    raise Warning(f"MediaMTXPathConfigV5: Warning: attribute {key} does not exist on object")
+        except Exception as e:
+            raise ValueError(f"MediaMTXPathConfigV5: Error syncing from JSON: {e}")
+        
     
 class MediaMTXPathConfigV4:
     """
@@ -850,11 +917,197 @@ class MediaMTXPathConfigV4:
 # ─────────────────────────────────────────────────────────────────────────────
 # MediaMTX API helper
 # ─────────────────────────────────────────────────────────────────────────────
+class MediamMTXAPIInterfaceV5:
+
+    class Endpoints(Enum):
+        LIST_PATHS = "/v3/config/paths/list"
+        ADD_PATH = "/v3/config/paths/add/{uid}"
+        PATCH_PATH = "/v3/config/paths/patch/{uid}"
+        DELETE_PATH = "/v3/config/paths/delete/{uid}"
+        GET_PATH = "/v3/paths/get/{uid}"  
+
+    def __init__(
+        self,
+        *,     
+        link: "Link",
+        jwt_token: Optional[str] = None,
+        verify_ssl: bool = False
+    ) -> None:
+
+        if not link:
+            raise ValueError("MediamMTXAPIInterfaceV5: A Safe_Link object must be provided.")
+
+        self._link = link
+        self._jwt = jwt_token
+        self._base_url = self._link.Hyperlink.rstrip("/")
+
+        self._session = requests.Session()
+        self._session.verify = verify_ssl
+
+        # Retry strategy
+        retries = Retry(
+            total=3,
+            backoff_factor=3,
+            status_forcelist=[502, 503, 504],
+            allowed_methods=frozenset(["HEAD", "GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])  # must be a set/frozenset
+        )
+        adapter = HTTPAdapter(max_retries=retries.total)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
+
+        try:
+            self.alive = self.is_alive()
+        except Exception:
+            self.alive = False
+
+
+    def is_alive(self) -> bool:
+        """Check if MediaMTX is reachable and responding."""
+        status = self._request("GET", self.Endpoints.LIST_PATHS.value)
+        return 200 <= status < 300
+    
+    #path
+    def create_path(self, config: "MediaMTXPathConfigV5", path_name: str) -> int: 
+        """
+        /v3/config/paths/add/{name}:
+        post:
+            summary: adds a path configuration.
+            description: all fields are optional.
+            parameters:
+            - name: name
+                in: path
+                required: true
+            requestBody:
+            required: true
+            content:
+                application/json:
+                schema:
+                    $ref: '#/components/schemas/PathConf'        
+                    
+            
+            200	 the request was successful.
+            400	 invalid request.
+                 {
+                    "error": "string"
+                }
+
+            500 server error.
+                {
+                    "error": "string"
+                }
+        """
+        
+        """Create a MediaMTX path."""
+        try:
+            payload = config.PayloadCreatePath()
+            response = self._request("POST", self.Endpoints.ADD_PATH.value.format(uid=path_name), json=payload)
+            return response
+        except Exception as e:
+            raise ValueError(f"MediamMTXAPIInterfaceV5: Error creating path: {e}")
+    
+    def delete_path(self, path_name: str) -> int:
+        """Delete a MediaMTX path."""
+        try:
+            endpoint = self.Endpoints.DELETE_PATH.value.format(uid=path_name)
+            status = self._request("DELETE", endpoint)
+            return status
+        except Exception as e:
+            raise ValueError(f"MediamMTXAPIInterfaceV5: Error deleting path: {e}")
+ 
+    def get_path(self, path_name: str) -> dict:
+        """
+        Retrieve a MediaMTX path configuration.
+        GET /v3/paths/get/{name}
+
+        Returns the JSON response on success.
+        Raises ValueError on failure (400, 404, 500, etc.).
+        """
+        try:
+            endpoint = self.Endpoints.GET_PATH.value.format(uid=path_name)
+            url = f"{self._base_url}/{endpoint.lstrip('/')}"
+            
+            response = self._session.get(
+                url,
+                headers=self._headers(),
+                params=self._params(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 400:
+                raise ValueError(f"MediamMTXAPIInterfaceV5: Invalid request for path '{path_name}': {response.text}")
+            elif response.status_code == 404:
+                raise ValueError(f"MediamMTXAPIInterfaceV5: Path '{path_name}' not found.")
+            else:
+                raise ValueError(f"MediamMTXAPIInterfaceV5: Server error ({response.status_code}) retrieving path '{path_name}': {response.text}")
+        
+        except requests.RequestException as e:
+            raise ValueError(f"MediamMTXAPIInterfaceV5: Network error retrieving path '{path_name}': {e}")
+    
+    def patch_path(self, path_name: str, changes: dict) -> int:
+        """Patch a MediaMTX path with the given changes dictionary.
+            post:
+            summary: adds a path configuration.
+            description: all fields are optional.
+            parameters:
+            - path_name str
+            - changes dict
+        """
+        try:
+            endpoint = self.Endpoints.PATCH_PATH.value.format(uid=path_name)
+            status = self._request("PATCH", endpoint, json=changes)
+            return status
+        except Exception as e:
+            raise ValueError(f"MediamMTXAPIInterfaceV5: Error patching path: {e}")  
+    
+    #def list_paths(self) ->None:       """List all MediaMTX paths."""
+        #placeholder_ #TODO Make Functional
+    #    pass
+    
+    # ------------------------
+    # Internal helpers
+    # ------------------------
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self._jwt:
+            headers["Authorization"] = f"Bearer {self._jwt}"
+        return headers
+
+    def _params(self) -> dict[str, str]:
+        return {"jwt": self._jwt} if self._jwt else {}
+
+    def _request(
+        self,
+        method: str,
+        endpoint: str,
+        *,
+        json: Optional[dict] = None
+    ) -> int:
+
+        url = f"{self._base_url}/{endpoint.lstrip('/')}"
+        try:
+            response = self._session.request(
+                method,
+                url,
+                headers=self._headers(),
+                params=self._params(),
+                json=json,
+                timeout=10
+            )
+            return response
+
+        except requests.RequestException:
+            return 500
+        except Exception:
+            return 500
+
+
+
+
+"""
 class MediaMTXAPIInterfaceV4:
-    """
-    Wrapper for MediaMTX Control-API (v4) using a Safe_Link for host/protocol/port.
-    All methods now return a tuple (HTTPStatusCodes, Optional[data]).
-    """
+
 
     class Endpoints(Enum):
         LIST_PATHS = "/v3/config/paths/list"
@@ -916,12 +1169,7 @@ class MediaMTXAPIInterfaceV4:
         json: Optional[dict] = None,
         return_full: bool = False
     ) -> tuple[HTTPStatusCodes, Optional[Any]]:
-        """
-        Make an HTTP request to the MediaMTX API.
 
-        Returns:
-            tuple(HttpCode, response_data_or_None)
-        """
         url = f"{self._base_url}/{endpoint.lstrip('/')}"
         try:
             response = self._session.request(
@@ -954,24 +1202,7 @@ class MediaMTXAPIInterfaceV4:
     # Path operations
     # ------------------------
     def create_path(self, config: "MediaMTXPathConfigV4") -> tuple[HTTPStatusCodes, None]:
-        """
-        /v3/config/paths/add/{name}:
-        post:
-            summary: adds a path configuration.
-            description: all fields are optional.
-            parameters:
-            - name: name
-                in: path
-                required: true
-            requestBody:
-            required: true
-            content:
-                application/json:
-                schema:
-                    $ref: '#/components/schemas/PathConf'        
-        """
-        
-        """Create a MediaMTX path."""
+
         payload = config.to_dict(for_api=True)
         status, _ = self._request(
             "POST", self.Endpoints.ADD_PATH.value.format(uid=self._path_uid), json=payload
@@ -979,19 +1210,19 @@ class MediaMTXAPIInterfaceV4:
         return status, None
 
     def patch_path(self, changes: dict[str, Any]) -> tuple[HTTPStatusCodes, None]:
-        """Patch a MediaMTX path."""
+
         endpoint = self.Endpoints.PATCH_PATH.value.format(uid=self._path_uid)
         status, _ = self._request("PATCH", endpoint, json=changes)
         return status, None
 
     def delete_path(self) -> tuple[HTTPStatusCodes, None]:
-        """Delete a MediaMTX path."""
+
         endpoint = self.Endpoints.DELETE_PATH.value.format(uid=self._path_uid)
         status, _ = self._request("DELETE", endpoint)
         return status, None
 
     def get_path_config(self) -> tuple[HTTPStatusCodes, Optional[dict]]:
-        """Retrieve current configuration of the path."""
+
         endpoint = self.Endpoints.GET_PATH.value.format(uid=self._path_uid)
         status, response = self._request("GET", endpoint, return_full=True)
         if status != HTTPStatusCodes.OK or response is None:
@@ -1002,10 +1233,9 @@ class MediaMTXAPIInterfaceV4:
             return HTTPStatusCodes.INTERNAL_SERVER_ERROR, None
 
     def is_alive(self) -> bool:
-        """Check if MediaMTX is reachable and responding."""
         status, _ = self._request("GET", self.Endpoints.LIST_PATHS.value)
         return 200 <= status.code < 300
-
+"""
 
 
 # TakatVideo API helper (v3)
@@ -1045,7 +1275,7 @@ class TakatVideo_API_Interface_v3:
 
         # Set retries
         retries = Retry(total=3, backoff_factor=3, status_forcelist=[502, 503, 504])
-        adapter = HTTPAdapter(max_retries=retries)
+        adapter = HTTPAdapter(max_retries=retries.total)
         self._sess.mount("http://", adapter)
         self._sess.mount("https://", adapter)
 
@@ -1268,103 +1498,11 @@ class FFMPEG_Command_Builder_v4:
 # Single Camera object
 # ───────────────────────────────────────────────────────────────────────────── 
 class CameraObjectV4():
-    """ Represents a single camera instance managed through MediaMTX, composed of a 
-            source path (the ingest stream) and a virtual path (the public stream).
-
-            This class encapsulates configuration management, path creation, syncing,
-            and patching of both source and virtual MediaMTX paths. It serves as the 
-            logical bridge between local configuration objects and the MediaMTX server API.
-
-            Main Responsibilities:
-            -----------------------
-            • Create, patch, and destroy MediaMTX source and virtual paths.
-            • Maintain local (internal) MediaMTXPathConfigV4 configurations that can 
-            be synchronized with the server in both directions.
-            • Generate and manage FFmpeg run commands used during path initialization.
-            • Provide utilities for updating individual path parameters dynamically.
-            • Optionally perform automatic path creation and reverse synchronization 
-            during initialization.
-
-            Attributes:
-            -----------
-            _source_uid : str
-                Unique identifier for the source path.
-            _virtual_uid : str
-                Unique identifier for the virtual path.
-            _source_config : MediaMTXPathConfigV4
-                Local configuration object representing the source path state.
-            _virtual_config : MediaMTXPathConfigV4
-                Local configuration object representing the virtual path state.
-            _source_path_url : Optional[str]
-                Complete URL to the MediaMTX source stream endpoint.
-            _virtual_path_url : Optional[str]
-                Complete URL to the MediaMTX virtual stream endpoint.
-            _api_source : MediaMTXAPIInterfaceV4
-                API interface instance used for manipulating the source path.
-            _api_virtual : MediaMTXAPIInterfaceV4
-                API interface instance used for manipulating the virtual path.
-            _ffmpeg : FFMPEG_Command_Builder_v3
-                Helper object responsible for generating FFmpeg run-on-init commands.
-            _status_code : HTTPStatusCodes
-                Latest operation status code (e.g., from path creation or sync).
-            _status_message : str
-                Descriptive message of the latest operation result.
-            _camera_type : UnifiedInputs.CameraObjectV4_CameraType
-                Type of camera instance (source or virtual).
-            _timeout : int
-                Timeout (in microseconds) used in path configuration.
-            _loop : bool
-                Whether FFmpeg streams should loop on completion.
-
-            Methods:
-            --------
-            _initialize_paths() -> None
-                Creates source and virtual paths on the MediaMTX server, performs a 
-                reverse sync to push local configs, and updates internal URLs.
-            sync(to_server: bool = False) -> Tuple[HTTPStatusCodes, HTTPStatusCodes]
-                Synchronizes configuration either from the MediaMTX server (pull) 
-                or to the server (push), updating both local and remote states.
-            update_source_parameter(key: str, value: Any) -> Tuple[HTTPStatusCodes, str]
-                Patches a single parameter on the source path; updates internal config 
-                on success and returns status/message.
-            update_virtual_parameter(key: str, value: Any) -> Tuple[HTTPStatusCodes, str]
-                Patches a single parameter on the virtual path; updates internal config 
-                on success and returns status/message.
-            self_destruct(otp: Optional[str] = None) -> None
-                Removes source and virtual paths from the MediaMTX server and clears
-                all internal references. Optionally performs OTP-based validation
-                for secure teardown.
-            its_me(uid: str) -> bool
-                Returns True if the provided UID matches either the source or virtual path.
-            to_dict() -> dict
-                Serializes the camera object and its configs into a dictionary for persistence.
-
-            Typical Usage:
-            --------------
-                 cam = CameraObjectV4(
-                     config=MediaMTXPathConfigV4(name="camera1", source="rtsp://..."),
-                     source_uid="src_cam_01",
-                     virtual_uid="virt_cam_01",
-                     api_mediamtx_link=Link(...),
-                     stream_source_link=Link(...),
-                     stream_mediamtx_link=Link(...),
-                     create_paths=True
-                 )
-                 cam.update_virtual_parameter("timeout", 8000000)
-                 cam.sync(to_server=True)
-                 cam.self_destruct()
-
-            Notes:
-            ------
-            - The class assumes MediaMTX is reachable via the provided link interfaces.
-            - The FFmpeg run-on-init command is automatically generated for the source path.
-            - Both paths are always created and patched sequentially for reliability.
-            """
                     
     def __init__(
             self,
             *,
-            config: MediaMTXPathConfigV4,
+            config: MediaMTXPathConfigV5,
             source_uid: str,
             virtual_uid: str,
             otp:str,
@@ -1389,6 +1527,7 @@ class CameraObjectV4():
         self._virtual_path_url: Optional[str] = None
         self._virtual_config = copy.deepcopy(config)
         
+        self._api_mediamtx = api_mediamtx_link
         self._api_takat = TakatVideo_API_Interface_v3(  uid=self._source_uid,
                                                         link=api_mediamtx_link,
                                                         verify_ssl=False,
@@ -1397,7 +1536,6 @@ class CameraObjectV4():
         self._camera_type = camera_type or UnifiedInputs.CameraObjectV4_CameraType.Source
         self._otp = otp
         
-
         # Streaming & FFmpeg
         self._stream_source_link = stream_source_link
         self._stream_mediamtx_link = stream_mediamtx_link
@@ -1405,10 +1543,6 @@ class CameraObjectV4():
         self._output_protocol = output_protocol
         self._timeout = timeout
         self._loop = loop
-
-        # Status
-        self._status_code = HTTPStatusCodes.CONFLICT
-        self._status_message = f"Camera {self._source_uid} not initialized"
 
         # Build FFmpeg helper
         port = self._stream_mediamtx_link.Port or 8554
@@ -1419,30 +1553,28 @@ class CameraObjectV4():
             link=self._stream_source_link
         )
         
-        # API interfaces
-        self._api_source =  MediaMTXAPIInterfaceV4(path_uid=self._source_config.name, link=api_mediamtx_link)
-        self._api_virtual = MediaMTXAPIInterfaceV4(path_uid=self._virtual_config.name, link=api_mediamtx_link)
+        # API interface
+        self.Media_MTX_API = MediamMTXAPIInterfaceV5(
+                            link=api_mediamtx_link,
+                            verify_ssl=False,
+                            jwt_token=None
+                            )
 
         # Initialize paths only if flag is True
         if create_paths:
             # change the local configs to what we want them to become
             
-            # source camera config changes
-            #self._source_config.change_param("runOnInit", self._ffmpeg.run_on_init(    ingest_type=self._input_type,
-            #                                                                            output_protocol=self._output_protocol,
-            #                                                                            timeout=self._timeout,
-            #                                                                            loop=self._loop
-            #                                                                        ))
-            self._source_config.change_param("sourceOnDemand", False)
-            #self._source_config.change_param("name", self._source_uid)
-            self._source_config.change_param("runOnNotReady", self._api_takat.disconnect_url(self._otp))  # TakatVideo disconnect command
+            #source camera
+            self._source_config.RunOnInit(value=self._ffmpeg.run_on_init(ingest_type=self._input_type,
+                                                                         output_protocol=self._output_protocol,
+                                                                         timeout=self._timeout,
+                                                                         loop=self._loop))
+            self._source_config.SourceOnDemand(value=False)
+            self._source_config.RunOnNotReady(value=self._api_takat.disconnect_url(self._otp))  # TakatVideo disconnect command
             
-            #virtual camera config changes
-            #self._virtual_config.change_param("name", self._virtual_uid)
-            self._virtual_config.change_param("source", f"{output_protocol.value}://127.0.0.1:{stream_mediamtx_link.Port}/{self.source_uid}/stream")
-            #self._virtual_config.change_param("timeout", self._timeout)
-            self._virtual_config.change_param("sourceOnDemand", False)
-            
+            #virtual camera
+            self._virtual_config.Source(value=f"{output_protocol.value}://127.0.0.1:{stream_mediamtx_link.Port}/{self.source_uid}/stream")
+            self._virtual_config.SourceOnDemand(value=False)
 
             # now make thoose paths and set them up
             self._initialize_paths()
@@ -1462,53 +1594,45 @@ class CameraObjectV4():
 
         # Step 1: Add Source Path
         try:
-            status_source_add = self._api_source.create_path(self._source_config)
-            if not (200 <= status_source_add.code < 300):
+            status_source_add = self.Media_MTX_API.create_path(path_name=self._source_uid, config=self._source_config)
+            if not (200 <= status_source_add < 300):
                 self._status_code = status_source_add
-                self._status_message = f"CameraObjectV4: Failed to add source path ({status_source_add})"
+                self._status_message = f"CameraObjectV4: Failed to add source path ({self._source_uid})"
                 return
         except requests.exceptions.ConnectionError:
-            self._status_code = HTTPStatusCodes.NETWORK_CONNECT_TIMEOUT_ERROR
-            self._status_message = "CameraObjectV4: Connection error when adding source path"
-            return
+            raise ValueError(f"CameraObjectV4: Failed to add source path {self._source_uid} due to connection error")
         except Exception:
-            self._status_code = HTTPStatusCodes.INTERNAL_SERVER_ERROR
-            self._status_message = "CameraObjectV4: Unexpected error when adding source path"
-            return
+            raise ValueError(f"CameraObjectV4: Unexpected error when adding source path")
 
         # Step 2: Add Virtual Path
         try:
-            status_virtual_add = self._api_virtual.create_path(self._virtual_config)
-            if not (200 <= status_virtual_add.code < 300):
+            status_virtual_add = self.Media_MTX_API.create_path(path_name=self._virtual_uid, config=self._virtual_config)
+            if not (200 <= status_virtual_add < 300):
                 self._status_code = status_virtual_add
                 self._status_message = f"CameraObjectV4: Failed to add virtual path ({status_virtual_add})"
                 return
         except requests.exceptions.ConnectionError:
-            self._status_code = HTTPStatusCodes.NETWORK_CONNECT_TIMEOUT_ERROR
-            self._status_message = "CameraObjectV4: Connection error when adding virtual path"
-            return
+            raise ValueError(f"CameraObjectV4: Failed to add virtual path {self._virtual_uid} due to connection error")
         except Exception:
-            self._status_code = HTTPStatusCodes.INTERNAL_SERVER_ERROR
-            self._status_message = "CameraObjectV4: Unexpected error when adding virtual path"
-            return
+            raise ValueError(f"CameraObjectV4: Unexpected error when adding virtual path")
+
         # ------------------------
         # Step 3: Reverse Sync (push local config to server)
         # ------------------------
-        try:          
+        try:
+            # patch source cam
+            statusS = self.Media_MTX_API.patch_path(path_name=self._source_uid, changes=self._source_config.PayloadUpdatePath())
+            # patch virtual cam
+            statusV = self.Media_MTX_API.patch_path(path_name=self._virtual_uid, changes=self._virtual_config.PayloadUpdatePath()) 
+            if statusS != 200: 
+                raise Warning(f"CameraObjectV4: Unexpected server response whilest patching source path {self._source_uid}")
+            if statusV != 200:
+                raise Warning(f"CameraObjectV4: Unexpected server response whilest patching viertual path {self._source_uid}")
                 
-            src_status, virt_status = self.sync(to_server=True)  # push local configs
-            if src_status != HTTPStatusCodes.OK or virt_status != HTTPStatusCodes.OK:
-                self._status_code = HTTPStatusCodes.FAILED_DEPENDENCY
-                self._status_message = f"CameraObjectV4: Failed reverse sync (source: {src_status}, virtual: {virt_status})"
-                return
         except requests.exceptions.ConnectionError:
-            self._status_code = HTTPStatusCodes.NETWORK_CONNECT_TIMEOUT_ERROR
-            self._status_message = "CameraObjectV4: Connection error during reverse sync"
-            return
+            raise Warning(f"CameraObjectV4: connection error whilest connecting to {self._api_mediamtx.Hyperlink} ")
         except Exception:
-            self._status_code = HTTPStatusCodes.INTERNAL_SERVER_ERROR
-            self._status_message = "CameraObjectV4: Unexpected error during reverse sync"
-            return
+            raise Warning(f"CameraObjectV4: internal server error whilest connecting to {self._api_mediamtx.Hyperlink} ")
 
         # ------------------------
         # Step 4: Update URLs
@@ -1517,106 +1641,11 @@ class CameraObjectV4():
             self._source_path_url = f"{self._stream_mediamtx_link.Root()}{self._source_uid}/stream"
             self._virtual_path_url = f"{self._stream_mediamtx_link.Root()}{self._virtual_uid}/stream"
         except Exception:
-            self._status_code = HTTPStatusCodes.INTERNAL_SERVER_ERROR
-            self._status_message = "CameraObjectV4: Failed to update source/virtual URLs"
-            return
+            raise Warning(f"CameraObjectV4: Failed to update source/virtual URLs")
 
         # ------------------------
         # All steps succeeded
         # ------------------------
-        self._status_code = HTTPStatusCodes.OK
-        self._status_message = HTTPStatusCodes.OK.status
-
-    # ------------------------
-    # Sync method - updates the settings to and from what is on the mediamtx server
-    # ------------------------
-    def sync(self, to_server: bool = False) -> tuple[HTTPStatusCodes, HTTPStatusCodes]:
-        """
-        Sync internal config with MediaMTX server.
-
-        If to_server=False (default), pull server state into internal config.
-        If to_server=True, push internal config to server so server matches local state.
-
-        Returns (source_status, virtual_status)
-        """
-        source_status, virtual_status = HTTPStatusCodes.INTERNAL_SERVER_ERROR, HTTPStatusCodes.INTERNAL_SERVER_ERROR
-
-        # ------------------------
-        # Source Path
-        # ------------------------
-        try:
-            if to_server:
-                # Push internal config to server
-                patch_dict = {k: v for k, v in self._source_config.to_dict().items() if k != "name"}
-                status_patch = self._api_source.patch_path(patch_dict, return_full=True)  # returns int
-                source_status = HTTPStatusCodes.OK if 200 <= status_patch < 300 else HTTPStatusCodes.FAILED_DEPENDENCY
-            else:
-                # Pull server state into internal config
-                status_get, data = self._api_source.get_path_config()
-                if status_get == HTTPStatusCodes.OK and data:
-                    self._source_config.load_from_dict(data)
-                    self._source_path_url = f"{self._stream_mediamtx_link.Root()}{self._source_uid}/stream"
-                source_status = status_get
-        except requests.exceptions.ConnectionError:
-            source_status = HTTPStatusCodes.NETWORK_CONNECT_TIMEOUT_ERROR
-        except Exception:
-            source_status = HTTPStatusCodes.INTERNAL_SERVER_ERROR
-
-        # ------------------------
-        # Virtual Path
-        # ------------------------
-        try:
-            if to_server:
-                patch_dict = {k: v for k, v in self._virtual_config.to_dict().items() if k != "name"}
-                status_patch = self._api_virtual.patch_path(patch_dict, return_full=True)  # returns int
-                virtual_status = HTTPStatusCodes.OK if 200 <= status_patch < 300 else HTTPStatusCodes.FAILED_DEPENDENCY
-            else:
-                status_get, data = self._api_virtual.get_path_config()
-                if status_get == HTTPStatusCodes.OK and data:
-                    self._virtual_config.load_from_dict(data)
-                    self._virtual_path_url = f"{self._stream_mediamtx_link.Root()}{self._virtual_uid}/stream"
-                virtual_status = status_get
-        except requests.exceptions.ConnectionError:
-            virtual_status = HTTPStatusCodes.NETWORK_CONNECT_TIMEOUT_ERROR
-        except Exception:
-            virtual_status = HTTPStatusCodes.INTERNAL_SERVER_ERROR
-
-        return source_status, virtual_status
-
-    # ------------------------
-    # Update a single parameter for source camera
-    # ------------------------
-    def update_source_parameter(self, key: str, value: Any) -> Tuple[HTTPStatusCodes, str]:
-        try:
-            patch_dict = {key: value}
-            status, _ = self._api_source.patch_path(patch_dict, return_full=True)
-            if 200 <= status.code < 300:
-                self._source_config.change_param(key=key, value=value)
-                return HTTPStatusCodes.OK, f"CameraObjectV4: Source parameter '{key}' updated successfully."
-            else:
-                return HTTPStatusCodes.FAILED_DEPENDENCY, f"CameraObjectV4: Failed to update source parameter '{key}'."
-        except requests.exceptions.ConnectionError:
-            return HTTPStatusCodes.NETWORK_CONNECT_TIMEOUT_ERROR, f"CameraObjectV4: Connection error when updating source parameter '{key}'."
-        except Exception as e:
-            return HTTPStatusCodes.INTERNAL_SERVER_ERROR, f"CameraObjectV4: Unexpected error when updating source parameter '{key}': {e}"
-
-    # ------------------------
-    # Update a single parameter for virtual camera
-    # ------------------------
-    def update_virtual_parameter(self, key: str, value: Any) -> Tuple[HTTPStatusCodes, str]:
-        try:
-            patch_dict = {key: value}
-            status, _ = self._api_virtual.patch_path(patch_dict, return_full=True)
-            if 200 <= status.code < 300:
-                self._virtual_config.change_param(key=key, value=value)
-                return HTTPStatusCodes.OK, f"CameraObjectV4: Virtual parameter '{key}' updated successfully."
-            else:
-                return HTTPStatusCodes.FAILED_DEPENDENCY, f"CameraObjectV4: Failed to update virtual parameter '{key}'."
-        except requests.exceptions.ConnectionError:
-            return HTTPStatusCodes.NETWORK_CONNECT_TIMEOUT_ERROR, f"CameraObjectV4: Connection error when updating virtual parameter '{key}'."
-        except Exception as e:
-            return HTTPStatusCodes.INTERNAL_SERVER_ERROR, f"CameraObjectV4: Unexpected error when updating virtual parameter '{key}': {e}"
-
 
 
     # ------------------------
@@ -1629,11 +1658,18 @@ class CameraObjectV4():
         """
         #TODO add OTP challange to see if we have the right to destroy the object.
         try:
-            self._api_source.delete_path()
-            self._api_virtual.delete_path()
+            #def delete_path(self, path_name: str) -> int:
+            statusS = self.Media_MTX_API.delete_path(path_name=self._source_uid)
+            statusV = self.Media_MTX_API.delete_path(path_name=self._virtual_uid)
+            
+            if statusS != 200: 
+                raise Warning(f"CameraObjectV4: Unexpected server response whilest deleting source path {self._source_uid}")
+            if statusV != 200:
+                raise Warning(f"CameraObjectV4: Unexpected server response whilest deleting irtual path {self._source_uid}")
+            
             # TODO: unregister from TakatVideo API when available
         except Exception as e:
-            print(f"CameraObjectV4: Self-destruct cleanup failed: {e}")
+            raise Warning(f"CameraObjectV4: Self-destruct cleanup failed: {e}")
 
         # Clear internal references
         for attr in list(vars(self).keys()):
@@ -1665,23 +1701,8 @@ class CameraObjectV4():
     # ------------------------
     # Utility
     # ------------------------
-    def its_me(self, uid: str) -> bool:
+    def UidInUse(self, uid: str) -> bool:
         return uid in (self._source_uid, self._virtual_uid)
-
-    def to_dict(self) -> dict:
-        return {
-            "status_code": int(self._status_code.code),
-            "status_message": self._status_code.status,
-            "source_uid": self._source_uid,
-            "virtual_uid": self._virtual_uid,
-            "source_path": self._source_path_url,
-            "virtual_path": self._virtual_path_url,
-            "camera_type": int(self._camera_type),
-            "source config": self._source_config.to_dict() if self._source_config else None,
-            "virtual config": self._virtual_config.to_dict() if self._virtual_config else None,
-            "timeout": self._timeout,
-            "loop": self._loop,
-        }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

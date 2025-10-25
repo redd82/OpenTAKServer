@@ -25,19 +25,42 @@ from opentakserver.blueprints.TakatApiExtensions_api.certificate_authority impor
 
 api_blueprint = Blueprint('takat_api_blueprint', __name__)
 
+def _restart_service(name: str, delay: float = 1.0) -> None:
+    def _runner():
+        time.sleep(delay)
+        try:
+            subprocess.run(["sudo", "systemctl", "restart", name], check=True)
+            logger.info("Queued restart for %s", name)
+        except Exception:
+            logger.exception("Restart failed for %s", name)
+    threading.Thread(target=_runner, daemon=True).start()
+
 def _restart_self(delay: float = 1.0) -> None:
     def _runner():
         time.sleep(delay)
         logger.info("Self-terminating for restart")
         os._exit(1)
     threading.Thread(target=_runner, daemon=True).start()
-
+    
 # TAKAT additional endpoints
-@api_blueprint.route("/api/system/restart", methods=["POST"])
+@api_blueprint.route("/api/system/restartots", methods=["POST"])
 @roles_required("administrator")
-def restart_service():
+def restart_service_opentak():
     _restart_self()
-    return {"success": True, "message": "Restart queued"}, 202
+    return {"success": True, "message": "Restart of ots queued"}, 202
+
+@api_blueprint.route("/api/system/restartcot", methods=["POST"])
+@roles_required("administrator")
+def restart_service_cot():
+    _restart_service("cot_parser.service")
+    return {"success": True, "message": "Restart of cot service queued"}, 202
+
+@api_blueprint.route("/api/system/restarteud", methods=["POST"])
+@roles_required("administrator")
+def restart_service_eud():
+    _restart_service("eud_handler_ssl.service")
+    _restart_service("eud_handler.service")
+    return {"success": True, "message": "Restart eud services queued"}, 202
 
 @api_blueprint.route('/api/usereuds', methods=['POST'])
 @auth_required()

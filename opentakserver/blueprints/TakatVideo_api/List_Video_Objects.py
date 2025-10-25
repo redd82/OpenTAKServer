@@ -4,7 +4,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # assume Video_Object_v3 is imported in this module scope
-from opentakserver.blueprints.TakatVideo_api.Video_Object import Video_Object_v3
+from opentakserver.blueprints.TakatVideo_api.Video_Object import Video_Object_v4
 
 VIDEO_OBJECTS: list['Video_Object_v3'] = []              # holds Video_Object_v3 instances
 VIDEO_OBJECTS_MITM: list[tuple[str, str]] = []         # tuples (linked_device_uid, virtual_camera_path)
