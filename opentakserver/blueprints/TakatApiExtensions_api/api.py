@@ -41,21 +41,21 @@ def _restart_self(delay: float = 1.0) -> None:
         logger.info("Self-terminating for restart")
         os._exit(1)
     threading.Thread(target=_runner, daemon=True).start()
-
+    
 # TAKAT additional endpoints
-@api_blueprint.route("/api/system/restartots", methods=["POST"])
+@api_blueprint.route("/api/system/restartots", methods=["GET"])
 @roles_required("administrator")
 def restart_service_opentak():
     _restart_self()
     return {"success": True, "message": "Restart of ots queued"}, 202
 
-@api_blueprint.route("/api/system/restartcot", methods=["POST"])
+@api_blueprint.route("/api/system/restartcot", methods=["GET"])
 @roles_required("administrator")
 def restart_service_cot():
     _restart_service("cot_parser.service")
     return {"success": True, "message": "Restart of cot service queued"}, 202
 
-@api_blueprint.route("/api/system/restarteud", methods=["POST"])
+@api_blueprint.route("/api/system/restarteud", methods=["GET"])
 @roles_required("administrator")
 def restart_service_eud():
     _restart_service("eud_handler_ssl.service")
