@@ -41,7 +41,7 @@ def _restart_self(delay: float = 1.0) -> None:
         logger.info("Self-terminating for restart")
         os._exit(1)
     threading.Thread(target=_runner, daemon=True).start()
-    
+
 # TAKAT additional endpoints
 @api_blueprint.route("/api/system/restartots", methods=["POST"])
 @roles_required("administrator")

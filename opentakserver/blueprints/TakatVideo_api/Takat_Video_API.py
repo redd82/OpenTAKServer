@@ -8,8 +8,8 @@ from flask import Blueprint, request, jsonify, Response, json
 from opentakserver.blueprints.TakatVideo_api.util import Safe_Link as Link  # safe hyperlink object
 from opentakserver.blueprints.TakatVideo_api.util import Unified_Enum_Inputs as Inputs  # safe hyperlink object
 from opentakserver.blueprints.TakatVideo_api.Video_Object import CameraObjectV4 as CameraObjectV4
-from opentakserver.blueprints.TakatVideo_api.Video_Object import MediaMTXPathConfigV4 as MediaMTXPathConfigV4
-from opentakserver.blueprints.TakatVideo_api.Video_Object import MediaMTXAPIInterfaceV4 as IfaceV4
+from opentakserver.blueprints.TakatVideo_api.Video_Object import MediaMTXPathConfigV5 as MediaMTXPathConfigV5
+from opentakserver.blueprints.TakatVideo_api.Video_Object import MediamMTXAPIInterfaceV5 as IfaceV5
 
 #Global List
 #from opentakserver.blueprints.TakatVideo_api.List_Video_Objects import VIDEO_OBJECTS, add_video_object, remove_video_object_by_uid, get_video_object_by_uid,get_video_object_by_uid_and_otp, video_objects_to_dict
@@ -198,18 +198,23 @@ def Test():
         # ----------------------
         # Camera config
         # ----------------------
-        Uid = "123879123sdfefwsfsgrwr7456"
-        Source_Cam_UID = "3451234"
+        Uid = "123879123jhgjhgsdfefwsfsgrwr7456"
+        Source_Cam_UID = "3451ewqweq234"
         Virtual_Cam_UID = "virt_cam_01"
-        otp ="12sdf324revf434"
-
-        api = IfaceV4(path_uid=Uid, link=MediaMTX_API)
-        camera_config =  MediaMTXPathConfigV4(
-            name=Uid,
-            source=f"testing.com/{Source_Cam_UID}"
-        )
+        Otp ="12sdf324reaeaeaevf434"
         
-        status, _ = api.create_path(camera_config)
+        SourceConfig = MediaMTXPathConfigV5(name=Source_Cam_UID, source=Source_Cam.Hyperlink)
+  
+  
+        X = CameraObjectV4(config=SourceConfig, source_uid=Source_Cam_UID, virtual_uid=Virtual_Cam_UID, otp=Otp,
+                           api_mediamtx_link=MediaMTX_API, stream_mediamtx_link=MediaMTX_Stream, stream_source_link=Source_Cam,
+                           input_type=Inputs.FFMPEG_IngestType.Default, output_protocol=Inputs.FFMPEG_Protocol.RTSP,
+                           timeout=5_000_000, loop=True, create_paths=True, camera_type=Inputs.CameraObjectV4_CameraType.Source)
+        
+        
+
+        
+
 
         #        uid:str, link: Link,
 

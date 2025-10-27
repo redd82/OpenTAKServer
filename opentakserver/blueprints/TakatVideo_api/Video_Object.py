@@ -960,6 +960,9 @@ class MediamMTXAPIInterfaceV5:
         except Exception:
             self.alive = False
 
+    @property 
+    def Hyperlink(self):
+        return self._base_url
 
     def is_alive(self) -> bool:
         """Check if MediaMTX is reachable and responding."""
@@ -1698,6 +1701,74 @@ class CameraObjectV4():
     def camera_type(self) -> UnifiedInputs.CameraObjectV4_CameraType:
         return self._camera_type
 
+
+    # ------------------------
+    # Reverse Sync
+    # ------------------------
+    def SourceCameraFromServer(self, uid):
+        """
+            Retrieve and apply source camera configuration from the MediaMTX server.
+
+            Parameters
+            ----------
+            uid : str or None
+                Unique identifier of the source camera on the MediaMTX server.
+                If None, the function will not attempt to retrieve any configuration.
+
+            Raises
+            ------
+            Warning
+                If a connection error occurs or if the MediaMTX server responds with an internal error.
+            requests.exceptions.ConnectionError
+                If the connection to the MediaMTX API fails.
+
+            Notes
+            -----
+            This method uses the `Media_MTX_API.get_path()` method to fetch the
+            configuration for the given `uid`, and applies it to `_source_config`
+            using `SyncFromDict()`.
+            """
+        try:
+            if uid != None:
+                    self._source_config.SyncFromDict(data=self.Media_MTX_API.get_path(uid)) # try to set the config from what is on the mediamtx server
+                    
+        except requests.exceptions.ConnectionError: # Errors :/
+            raise Warning(f"CameraObjectV4: connection error whilest connecting to {self.Media_MTX_API.Hyperlink} whilest attempting to retrieve config from mediamtx server.")
+        except Exception:
+            raise Warning(f"CameraObjectV4: internal server error whilest connecting to {self._api_mediamtx.Hyperlink} whilest attempting to retrieve config from mediamtx server.")
+    
+    def VirtualCameraFromServer(self, uid):
+        """
+            Retrieve and apply virtual camera configuration from the MediaMTX server.
+
+            Parameters
+            ----------
+            uid : str or None
+                Unique identifier of the virtual camera on the MediaMTX server.
+                If None, the function will not attempt to retrieve any configuration.
+
+            Raises
+            ------
+            Warning
+                If a connection error occurs or if the MediaMTX server responds with an internal error.
+                requests.exceptions.ConnectionError
+                 If the connection to the MediaMTX API fails.
+
+            Notes
+            -----
+            This method uses the `Media_MTX_API.get_path()` method to fetch the
+            configuration for the given `uid`, and applies it to `_virtual_config`
+            using `SyncFromDict()`.
+        """
+        try:
+            if uid != None:
+                    self._virtual_config.SyncFromDict(data=self.Media_MTX_API.get_path(uid)) # try to set the config from what is on the mediamtx server
+                    
+        except requests.exceptions.ConnectionError: # Errors :/
+            raise Warning(f"CameraObjectV4: connection error whilest connecting to {self.Media_MTX_API.Hyperlink} whilest attempting to retrieve config from mediamtx server.")
+        except Exception:
+            raise Warning(f"CameraObjectV4: internal server error whilest connecting to {self._api_mediamtx.Hyperlink} whilest attempting to retrieve config from mediamtx server.")
+    
     # ------------------------
     # Utility
     # ------------------------
