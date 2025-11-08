@@ -5,11 +5,14 @@
 #    app.register_blueprint(takat_api_extensions)
 #
 from flask import Blueprint
+from opentakserver.extensions import logger
 from opentakserver.blueprints.TakatApiExtensions_api.user_api import user_api_blueprint
 from opentakserver.blueprints.TakatApiExtensions_api.api import api_blueprint
 from opentakserver.blueprints.TakatApiExtensions_api.data_package_api import data_package_api
 from opentakserver.blueprints.TakatApiExtensions_api.marti_api import data_package_marti_api
 from opentakserver.blueprints.TakatApiExtensions_api.token_api import token_api_blueprint
+
+logger.info("Loading TakAT api extensions...")
 
 # Create the main TakatApiExtensions blueprint
 takat_api_extensions = Blueprint("takat_api_extensions", __name__)

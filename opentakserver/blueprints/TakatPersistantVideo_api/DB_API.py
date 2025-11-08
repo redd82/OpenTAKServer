@@ -17,8 +17,6 @@ from typing import Any, Dict, Optional, Tuple, List, Union
 # ────────────────────────────────────────────────────────────────────────────
 from opentakserver.blueprints.TakatPersistantVideo_api.support import Rest
 
-
-
 class DB_API:
     
     #naar dit endpoint: http://192.168.18.120:10301/mediamtx/createMediaMTXPathConfig

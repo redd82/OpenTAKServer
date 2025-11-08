@@ -40,7 +40,7 @@ Setup_Lock = False  # Lock to prevent multiple setups during runtime
 
 
 
-@video_bp.route('/Register', methods=['POST'])
+@video_bp.route('/TakatVideo/Register', methods=['POST'])
 def register_camera():
     #only work f the server is setup
     if Setup_Lock == True:
@@ -53,7 +53,7 @@ def register_camera():
     else: return jsonify({"Develper":"Sorry, server not setup yet"}), 404
 
     
-@video_bp.route('/Unregister', methods=['POST'])
+@video_bp.route('/TakatVideo/Unregister', methods=['POST'])
 def unregister_camera():
     #only work f the server is setup
     if Setup_Lock == True:
@@ -65,7 +65,7 @@ def unregister_camera():
     else: return jsonify({"Develper":"Sorry, server not setup yet"}), 404
 
     
-@video_bp.route('/ServerSetup', methods=['POST'])
+@video_bp.route('/TakatVideo/ServerSetup', methods=['POST'])
 def ServerSetup():
     """
     tak server ip/fqdn
@@ -165,7 +165,7 @@ def ServerSetup():
             "Setup_Lock": Setup_Lock
         }), 403
     
-@video_bp.route('/Rick', methods=['POST'])    
+@video_bp.route('/TakatVideo/Rick', methods=['POST'])    
 def Rick():
     return jsonify({
         "status":"unauthorized",
@@ -179,7 +179,7 @@ def Rick():
     
     
     
-@video_bp.route('/Test', methods=['POST'])
+@video_bp.route('/TakatVideo/Test', methods=['POST'])
 def Test():
     # Temporary lock to avoid accidental calls
     if False:  # Change to True if you want to block
@@ -192,35 +192,35 @@ def Test():
         # Setup Links
         # ----------------------
         Source_Cam = Link(host="esp32-cam.net", port=80, allowed_protocols=allowed, protocol="rtsp", path="mjpeg")
-        MediaMTX_Stream = Link(host="192.168.18.132", protocol="rtsp", allowed_protocols=allowed, port=8443)
-        MediaMTX_API = Link(host="192.168.18.132", port=9997, allowed_protocols=allowed, protocol="http")
+        MediaMTX_Stream = Link(host="192.168.18.129", protocol="rtsp", allowed_protocols=allowed, port=8443)
+        MediaMTX_API = Link(host="192.168.18.129", port=9997, allowed_protocols=allowed, protocol="http")
 
         # ----------------------
         # Camera config
         # ----------------------
-        Uid = "123879123jhgjhgsdfefwsfsgrwr7456"
-        Source_Cam_UID = "3451ewqweq234"
+        Uid = "testuid"
+        Source_Cam_UID = "source_cam_01"
         Virtual_Cam_UID = "virt_cam_01"
-        Otp ="12sdf324reaeaeaevf434"
+        Otp ="supersecret"
         
-        SourceConfig = MediaMTXPathConfigV5(name=Source_Cam_UID, source=Source_Cam.Hyperlink)
+        Config = MediaMTXPathConfigV5(name=Source_Cam_UID, source=Source_Cam.Hyperlink)
+        Config.rpiCameraHFlip(value=True)
+        Config.RpiCameraWidth(value=1234)
+        Config.RpiCameraHeight(value=19)
+        Config.rpiCameraTextOverlayEnable(value=True)
+        Config.RpiCameraTextOverlay(value="hello TAKAT world")
   
-  
-        X = CameraObjectV4(config=SourceConfig, source_uid=Source_Cam_UID, virtual_uid=Virtual_Cam_UID, otp=Otp,
+        X = CameraObjectV4(config=Config, source_uid=Source_Cam_UID, virtual_uid=Virtual_Cam_UID, otp=Otp,
                            api_mediamtx_link=MediaMTX_API, stream_mediamtx_link=MediaMTX_Stream, stream_source_link=Source_Cam,
                            input_type=Inputs.FFMPEG_IngestType.Default, output_protocol=Inputs.FFMPEG_Protocol.RTSP,
                            timeout=5_000_000, loop=True, create_paths=True, camera_type=Inputs.CameraObjectV4_CameraType.Source)
         
-        
-
-        
-
 
         #        uid:str, link: Link,
 
 
         
-        return jsonify({"cameraobject": ""}), 200
+        return jsonify(X.to_dict()), 200
         # ----------------------
         # Initialize MediaMTX API
         # ----------------------

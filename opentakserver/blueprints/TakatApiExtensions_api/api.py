@@ -62,6 +62,18 @@ def restart_service_eud():
     _restart_service("eud_handler.service")
     return {"success": True, "message": "Restart eud services queued"}, 202
 
+@api_blueprint.route("/api/system/gethashadmin", methods=["GET"])
+@roles_required("administrator")
+def gethashadmin():
+    security = app.extensions.get("security")
+    if not security:
+        return {"success": False, "error": "Security extension unavailable"}, 500
+    user = security.datastore.find_user(username="administrator")
+    if not user:
+        return {"success": False, "error": "Administrator user not found"}, 404
+    hashed = user.password
+    return {"success": True, "hash": hashed}, 200
+
 @api_blueprint.route('/api/usereuds', methods=['POST'])
 @auth_required()
 def get_usereuds():

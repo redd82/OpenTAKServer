@@ -117,7 +117,6 @@ class Rest:
         self._retry =  self._clamp.Range(value=value, min_value=0, max_value=3)
         self._configure_session()
           
-
     # ------------------------
     # Internal helpers for creating api calls
     # ------------------------

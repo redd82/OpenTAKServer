@@ -13,7 +13,7 @@ logger.info("Loading TakAT persistant video api extensions...")
 takat_persistant_video_api_extensions = Blueprint("takat_persistant_video_api_extensions", __name__)
 
 # Register all sub-blueprints
-takat_persistant_video_api_extensions.register(api.py)
+#takat_persistant_video_api_extensions.register(persistant_video_api_blueprint, __name__)
 
 #takat_api_extensions.register_blueprint(user_api_blueprint)
 #takat_api_extensions.register_blueprint(api_blueprint)
