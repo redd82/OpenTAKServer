@@ -2,6 +2,11 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from opentakserver.extensions import db
+
+# Leave these imports, they're needed when making new DB migrations
+from opentakserver.models.Team import Team
+from opentakserver.models.Chatrooms import Chatroom
+
 from sqlalchemy import Integer, String, ForeignKey, DateTime, BigInteger
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -41,10 +46,7 @@ class EUD(db.Model):
     rb_lines = relationship("RBLine", cascade="all, delete-orphan", back_populates="eud")
     team = relationship("Team", back_populates="euds")
     owned_missions = relationship("Mission", back_populates="owner")
-    groups = relationship("Group", secondary="groups_euds", back_populates="euds")
     stats = relationship("EUDStats", back_populates="eud")
-    #mission_invitations_uid = relationship("MissionInvitation", back_populates="eud_uid")
-    #mission_invitations_callsign = relationship("MissionInvitation", back_populates="eud_callsign")
 
     def serialize(self):
         return {

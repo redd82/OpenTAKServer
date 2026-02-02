@@ -27,6 +27,7 @@ from opentakserver.models.Marker import Marker
 from opentakserver.models.Mission import Mission
 from opentakserver.models.MissionChange import MissionChange
 from opentakserver.models.MissionContentMission import MissionContentMission
+from opentakserver.models.MissionInvitation import MissionInvitation
 from opentakserver.models.MissionRole import MissionRole
 from opentakserver.models.MissionUID import MissionUID
 from opentakserver.models.Point import Point
@@ -48,8 +49,11 @@ def get_airplanes_live_data():
                                      app.config["OTS_AIRPLANES_LIVE_LON"],
                                      app.config["OTS_AIRPLANES_LIVE_RADIUS"]))
             if r.status_code == 200:
-                rabbit_connection = pika.BlockingConnection(pika.ConnectionParameters(app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")))
+                rabbit_credentials = pika.PlainCredentials(app.config.get("OTS_RABBITMQ_USERNAME"), app.config.get("OTS_RABBITMQ_PASSWORD"))
+                rabbit_host = app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")
+                rabbit_connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbit_host, credentials=rabbit_credentials))
                 channel = rabbit_connection.channel()
+                channel.exchange_declare(exchange=app.config.get("OTS_ADSB_GROUP"), exchange_type="fanout")
 
                 for craft in r.json()['ac']:
                     try:
@@ -62,7 +66,7 @@ def get_airplanes_live_data():
                         {'cot': str(BeautifulSoup(event, 'xml')), 'uid': app.config['OTS_NODE_ID']}),
                                           properties=pika.BasicProperties(expiration=app.config.get("OTS_RABBITMQ_TTL")))
                     # noinspection PyTypeChecker
-                    channel.basic_publish(exchange='cot_controller', routing_key='', body=json.dumps(
+                    channel.basic_publish(exchange='groups', routing_key=f"{app.config.get('OTS_ADSB_GROUP')}.OUT", body=json.dumps(
                         {'cot': str(BeautifulSoup(event, 'xml')), 'uid': app.config['OTS_NODE_ID']}),
                                           properties=pika.BasicProperties(expiration=app.config.get("OTS_RABBITMQ_TTL")))
 
@@ -148,8 +152,12 @@ def get_aishub_data():
                 logger.error(f"Failed to get AIS data: {r.text}")
                 return
 
-            rabbit_connection = pika.BlockingConnection(pika.ConnectionParameters(app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")))
+            rabbit_credentials = pika.PlainCredentials(app.config.get("OTS_RABBITMQ_USERNAME"), app.config.get("OTS_RABBITMQ_PASSWORD"))
+            rabbit_host = app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")
+            rabbit_connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbit_host, credentials=rabbit_credentials))
             channel = rabbit_connection.channel()
+            channel.exchange_declare(exchange=app.config.get("OTS_AIS_GROUP"), exchange_type="fanout")
+
             for vessel in r.json()[1]:
                 event = aiscot.ais_to_cot(vessel, None, None)
                 # noinspection PyTypeChecker
@@ -157,7 +165,7 @@ def get_aishub_data():
                     {'cot': str(BeautifulSoup(event, 'xml')), 'uid': app.config['OTS_NODE_ID']}),
                                       properties=pika.BasicProperties(expiration=app.config.get("OTS_RABBITMQ_TTL")))
                 # noinspection PyTypeChecker
-                channel.basic_publish(exchange='cot_controller', routing_key='', body=json.dumps(
+                channel.basic_publish(exchange='groups', routing_key=f"{app.config.get('OTS_ADSB_GROUP')}.OUT", body=json.dumps(
                     {'cot': str(BeautifulSoup(event, 'xml')), 'uid': app.config['OTS_NODE_ID']}),
                                       properties=pika.BasicProperties(expiration=app.config.get("OTS_RABBITMQ_TTL")))
 
@@ -169,15 +177,16 @@ def get_aishub_data():
 
 
 def delete_old_data():
-    timestamp = datetime.datetime.now() - datetime.timedelta(
+    timestamp = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
         seconds=app.config.get("OTS_DELETE_OLD_DATA_SECONDS"),
         minutes=app.config.get("OTS_DELETE_OLD_DATA_MINUTES"),
         hours=app.config.get("OTS_DELETE_OLD_DATA_HOURS"),
         days=app.config.get("OTS_DELETE_OLD_DATA_DAYS"),
         weeks=app.config.get("OTS_DELETE_OLD_DATA_WEEKS"))
 
-    rabbit_connection = pika.BlockingConnection(
-        pika.ConnectionParameters(app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")))
+    rabbit_credentials = pika.PlainCredentials(app.config.get("OTS_RABBITMQ_USERNAME"), app.config.get("OTS_RABBITMQ_PASSWORD"))
+    rabbit_host = app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")
+    rabbit_connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbit_host, credentials=rabbit_credentials))
     channel = rabbit_connection.channel()
 
     # I wish I hadn't made the marker's timestamp field a string...
@@ -203,9 +212,18 @@ def delete_old_data():
         publish_cot(generate_delete_cot(rb_line.uid, rb_line.cot.type), channel)
         db.session.delete(rb_line)
 
+    db.session.execute(delete(GeoChat).where(GeoChat.timestamp <= timestamp))
+
+    timestamp = datetime.datetime.now() - datetime.timedelta(
+        seconds=app.config.get("OTS_DELETE_OLD_DATA_SECONDS"),
+        minutes=app.config.get("OTS_DELETE_OLD_DATA_MINUTES"),
+        hours=app.config.get("OTS_DELETE_OLD_DATA_HOURS"),
+        days=app.config.get("OTS_DELETE_OLD_DATA_DAYS"),
+        weeks=app.config.get("OTS_DELETE_OLD_DATA_WEEKS"))
+
+    db.session.execute(delete(EUD).where(EUD.last_event_time <= timestamp))
     db.session.execute(delete(Point).where(Point.timestamp <= timestamp))
     db.session.execute(delete(CoT).where(CoT.timestamp <= timestamp))
-    db.session.execute(delete(EUD).where(EUD.last_event_time <= timestamp).where(EUD.last_status != 'Connected'))
     db.session.commit()
 
     channel.close()

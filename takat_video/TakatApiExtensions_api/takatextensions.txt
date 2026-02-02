@@ -1,0 +1,3 @@
+    # Register TakatApiExtensions FIRST to override endpoints from both marti_api and ots_api
+    from opentakserver.blueprints.TakatApiExtensions_api import takat_api_extensions
+    app.register_blueprint(takat_api_extensions)

@@ -1,6 +1,6 @@
-import jwt
 import datetime
 import hashlib
+import json
 import os
 import platform
 import traceback
@@ -8,22 +8,27 @@ from shutil import copyfile
 
 from urllib.parse import urlparse
 
+import pika
 import yaml
 
 import bleach
 import psutil
 import sqlalchemy.exc
-from flask import current_app as app, request, Blueprint, jsonify, send_from_directory, url_for
+from flask import current_app as app, request, Blueprint, jsonify, send_from_directory, session
+from flask_ldap3_login import AuthenticationResponseStatus
 from flask_security import auth_required, current_user, verify_password
-from sqlalchemy import select, delete
+from flask_babel import gettext
+from sqlalchemy import select
 
-from opentakserver.extensions import logger, db
+from opentakserver.extensions import logger, db, ldap_manager, babel
 
 from opentakserver.models.Alert import Alert
 from opentakserver.models.CasEvac import CasEvac
 from opentakserver.models.CoT import CoT
 from opentakserver.models.DataPackage import DataPackage
 from opentakserver.models.EUD import EUD
+from opentakserver.models.Group import Group
+from opentakserver.models.GroupUser import GroupUser
 from opentakserver.models.Token import Token
 from opentakserver.models.ZMIST import ZMIST
 from opentakserver.models.Point import Point
@@ -81,20 +86,63 @@ def change_config_setting(setting, value):
         logger.error("Failed to change setting {} to {} in config.yml: {}".format(setting, value, e))
 
 
+def route_cot(event: str, user: User):
+    """Used by API endpoints such as ``/api/markers`` to route CoT messages to the correct groups that a user belongs to.
+
+    :param event: The CoT to be routed as a string
+    :param user: The user object
+    :return: None
+    """
+
+    rabbit_credentials = pika.PlainCredentials(app.config.get("OTS_RABBITMQ_USERNAME"), app.config.get("OTS_RABBITMQ_PASSWORD"))
+    rabbit_host = app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")
+    rabbit_connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbit_host, credentials=rabbit_credentials))
+    channel = rabbit_connection.channel()
+
+    group_memberships = db.session.execute(db.session.query(GroupUser).filter_by(user_id=user.id, direction=Group.IN, enabled=True)).all()
+    if not group_memberships:
+        # Default to the __ANON__ group if the user doesn't belong to any IN groups
+        channel.basic_publish(exchange='groups', routing_key="__ANON__.OUT", body=json.dumps({'uid': app.config['OTS_NODE_ID'], 'cot': str(event)}),
+                              properties=pika.BasicProperties(expiration=app.config.get("OTS_RABBITMQ_TTL")))
+
+    for membership in group_memberships:
+        membership = membership[0]
+        channel.basic_publish(exchange='groups', routing_key=f"{membership.group.name}.{Group.OUT}",
+                              body=json.dumps({'uid': app.config['OTS_NODE_ID'], 'cot': str(event)}),
+                              properties=pika.BasicProperties(expiration=app.config.get("OTS_RABBITMQ_TTL")))
+    channel.close()
+    rabbit_connection.close()
+
+
 @api_blueprint.route('/files/api/config')
 def cloudtak_config():
+    """Required by CloudTAK, returns the following
+
+    .. code-block:: json
+
+        {"uploadSizeLimit": 400}
+    """
     return jsonify({'uploadSizeLimit': 400})
 
 
 # Simple health check for docker
 @api_blueprint.route('/api/health')
 def health():
+    """Health check for Docker, returns the following
+
+    .. code-block:: json
+        {"status": "healthy"}
+    """
     return jsonify({'status': 'healthy'})
 
 
 @api_blueprint.route('/api/status')
 @auth_required()
 def status():
+    """Server status used on the Dashboard page of the web UI
+
+    :rtype: dict
+    """
     now = datetime.datetime.now(datetime.timezone.utc)
     system_boot_time = datetime.datetime.fromtimestamp(psutil.boot_time(), datetime.datetime.now().astimezone().tzinfo)
     system_uptime = now - system_boot_time
@@ -147,8 +195,7 @@ def certificate():
             user = app.security.datastore.find_user(username=username)
 
             if not user:
-                return ({'success': False, 'error': 'Invalid username: {}'.format(username)}, 400,
-                        {'Content-Type': 'application/json'})
+                return jsonify({'success': False, 'error': gettext(u'Invalid username: %(username)s', username=username)}), 400
 
             ca = CertificateAuthority(logger, app)
             filenames = ca.issue_certificate(username, False)
@@ -175,8 +222,7 @@ def certificate():
                 except sqlalchemy.exc.IntegrityError as e:
                     db.session.rollback()
                     logger.error(e)
-                    return ({'success': False, 'error': 'Certificate already exists for {}'.format(username)}, 400,
-                            {'Content-Type': 'application/json'})
+                    return jsonify({'success': False, 'error': gettext(u'Certificate already exists for %(username)s', username=username)}), 400
 
                 copyfile(os.path.join(app.config.get("OTS_CA_FOLDER"), 'certs', username, "{}".format(filename)),
                          os.path.join(app.config.get("UPLOAD_FOLDER"), "{}.zip".format(file_hash)))
@@ -196,13 +242,12 @@ def certificate():
                 db.session.add(cert)
                 db.session.commit()
 
-            return {'success': True}, 200, {'Content-Type': 'application/json'}
+            return jsonify({'success': True}), 200
         except BaseException as e:
             logger.error(traceback.format_exc())
-            return {'success': False, 'error': str(e)}, 500, {'Content-Type': 'application/json'}
+            return jsonify({'success': False, 'error': str(e)}), 500
     elif request.method == 'POST':
-        return ({'success': False, 'error': "Please specify a callsign"}, 400,
-                {'Content-Type': 'application/json'})
+        return jsonify({'success': False, 'error': gettext(u'Please specify a callsign')}), 400
     elif request.method == 'GET':
         query = db.session.query(Certificate)
         query = search(query, Certificate, 'callsign')
@@ -214,12 +259,25 @@ def certificate():
 @api_blueprint.route('/api/me')
 @auth_required()
 def me():
+    """Get the details of the currently logged in user
+
+    :rtype: User
+    """
     return jsonify(current_user.to_json())
 
 
 @api_blueprint.route('/api/cot', methods=['GET'])
 @auth_required()
 def query_cot():
+    """Get CoT messages. All parameters are optional.
+
+    :param how: The how attribute of the CoT message, i.e. ``m-g``, ``h-g-i-g-o``
+    :param type: The type attribute of the CoT message, i.e. ``a-f-G-U-C``
+    :param sender_callsign: The callsign of the EUD that sent the CoT message
+    :param sender_uid: The UID of the EUD that sent the CoT message
+    :param page: The page number
+    :param per_page: The number of results per page
+    """
     query = db.session.query(CoT)
     query = search(query, CoT, 'how')
     query = search(query, CoT, 'type')
@@ -232,6 +290,14 @@ def query_cot():
 @api_blueprint.route("/api/alerts", methods=['GET'])
 @auth_required()
 def query_alerts():
+    """Get alerts. All parameters are optional.
+
+    :param uid: The alert's UID
+    :param sender_uid: The UID of the EUD that sent the alert
+    :param alert_type: The type of alert
+    :param page: The page number
+    :param per_page: The number of results per page
+    """
     query = db.session.query(Alert)
     query = search(query, Alert, 'uid')
     query = search(query, Alert, 'sender_uid')
@@ -243,6 +309,13 @@ def query_alerts():
 @api_blueprint.route("/api/point", methods=['GET'])
 @auth_required()
 def query_points():
+    """Query points. All parameters are optional.
+
+    :param uid: The point's UID
+    :param callsign: The point's callsign
+    :param page: The page number
+    :param per_page: The number of results per page
+    """
     query = db.session.query(Point)
 
     query = search(query, EUD, 'uid')
@@ -259,12 +332,34 @@ def rabbitmq_auth(path):
     if request.remote_addr != app.config.get("OTS_RABBITMQ_SERVER_ADDRESS"):
         return 'deny', 200
 
+    username = bleach.clean(request.form.get('username'))
+    password = None
+    if 'password' in request.form.keys():
+        password = bleach.clean(request.form.get('password'))
+
+    if app.config.get("OTS_ENABLE_LDAP"):
+        result = ldap_manager.authenticate(username, password)
+
+        if result.status == AuthenticationResponseStatus.success:
+            # Keep this import here to avoid a circular import when OTS is started
+            from opentakserver.blueprints.ots_api.ldap_api import save_user
+
+            save_user(result.user_dn, result.user_id, result.user_info, result.user_groups)
+
+            for group in result.user_groups:
+                if group['cn'] == app.config.get("OTS_LDAP_ADMIN_GROUP"):
+                    return 'allow administrator', 200
+
+            return 'allow', 200
+        else:
+            return 'deny', 200
+
     user = None
     if 'username' in request.form.keys():
-        user = app.security.datastore.find_user(username=bleach.clean(request.form.get('username')))
+        user = app.security.datastore.find_user(username=username)
 
     if user and 'password' in request.form.keys():
-        if user.active and verify_password(bleach.clean(request.form.get('password')), user.password):
+        if user.active and verify_password(password, user.password):
             if user.has_role("administrator"):
                 return 'allow administrator', 200
             return 'allow', 200
@@ -281,6 +376,14 @@ def rabbitmq_auth(path):
 @api_blueprint.route('/api/eud')
 @auth_required()
 def get_euds():
+    """Query EUDS. All parameters are optional.
+
+    :param callsign: The EUD's callsign
+    :param uid: The EUD's callsign
+    :param username: The username that the EUD belongs to
+    :param page: The page number
+    :param per_page: The number of results per page
+    """
     query = db.session.query(EUD)
 
     if 'username' in request.args.keys():
@@ -295,6 +398,7 @@ def get_euds():
 
 @api_blueprint.route('/api/truststore')
 def get_truststore():
+    """Downloads the server's truststore with no authentication required."""
     filename = f"truststore_root_{urlparse(request.url_root).hostname}.p12"
     return send_from_directory(app.config.get("OTS_CA_FOLDER"), 'truststore-root.p12', download_name=filename,
                                as_attachment=True)
@@ -303,6 +407,7 @@ def get_truststore():
 @api_blueprint.route('/api/map_state')
 @auth_required()
 def get_map_state():
+    """Gets the latest data to be displayed on the web UI's map"""
     try:
         results = {'euds': [], 'markers': [], 'rb_lines': [], 'casevacs': []}
 
@@ -335,6 +440,12 @@ def get_map_state():
 @api_blueprint.route('/api/icon')
 @auth_required()
 def get_icon():
+    """Query map icons. All parameters are optional.
+
+    :param filename:
+    :param groupName:
+    :param type2525b:
+    """
     query = db.session.query(Icon)
     query = search(query, Icon, 'filename')
     query = search(query, Icon, 'groupName')
@@ -346,5 +457,9 @@ def get_icon():
 @api_blueprint.route('/api/itak_qr_string')
 @auth_required()
 def get_settings():
+    """The iTAK QR string in the following format:
+
+    ``OpenTAKServer_SERVER-ADDRESS,SERVER-ADDRESS,8089,SSL``
+    """
     url = urlparse(request.url_root).hostname
     return "OpenTAKServer_{},{},{},SSL".format(url, url, app.config.get("OTS_SSL_STREAMING_PORT"))

@@ -24,7 +24,7 @@ from bs4 import BeautifulSoup
 from meshtastic import mqtt_pb2, mesh_pb2, portnums_pb2, BROADCAST_NUM
 import unishox2
 import yaml
-from flask import Flask
+from flask import Flask, jsonify
 
 from opentakserver.defaultconfig import DefaultConfig
 from opentakserver.functions import *
@@ -35,6 +35,7 @@ from opentakserver.models.MissionInvitation import MissionInvitation
 from opentakserver.models.MissionContentMission import MissionContentMission
 from opentakserver.models.MissionLogEntry import MissionLogEntry
 from opentakserver.models.MissionChange import MissionChange, generate_mission_change_cot
+from opentakserver.models.GroupMission import GroupMission
 from opentakserver.models.MissionUID import MissionUID
 from opentakserver.models.WebAuthn import WebAuthn
 
@@ -58,7 +59,6 @@ from opentakserver.models.Point import Point
 from opentakserver.models.Marker import Marker
 from opentakserver.models.DataPackage import DataPackage
 from opentakserver.models.Certificate import Certificate
-from opentakserver.models.GroupEud import GroupEud
 from opentakserver.models.Group import Group
 
 
@@ -76,14 +76,15 @@ class CoTController:
         self.rabbit_channel = None
 
     def run(self):
-        self.rabbit_connection = pika.BlockingConnection(
-            pika.ConnectionParameters(self.context.app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")))
+        rabbit_credentials = pika.PlainCredentials(app.config.get("OTS_RABBITMQ_USERNAME"), app.config.get("OTS_RABBITMQ_PASSWORD"))
+        rabbit_host = app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")
+        self.rabbit_connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbit_host, credentials=rabbit_credentials))
         self.rabbit_channel = self.rabbit_connection.channel()
-        self.rabbit_channel.queue_declare(queue='cot_controller')
-        self.rabbit_channel.exchange_declare(exchange='cot_controller', exchange_type='fanout')
-        self.rabbit_channel.queue_bind(exchange='cot_controller', queue='cot_controller')
+        self.rabbit_channel.exchange_declare(exchange='cot', exchange_type='fanout', durable=True)
+        self.rabbit_channel.queue_declare(queue='cot_parser')
+        self.rabbit_channel.queue_bind(exchange='cot', queue='cot_parser')
         self.rabbit_channel.basic_qos(prefetch_count=self.context.app.config.get("OTS_RABBITMQ_PREFETCH"))
-        self.rabbit_channel.basic_consume(queue='cot_controller', on_message_callback=self.on_message, auto_ack=False)
+        self.rabbit_channel.basic_consume(queue='cot_parser', on_message_callback=self.on_message, auto_ack=False)
         self.rabbit_channel.start_consuming()
 
     def insert_cot(self, soup, event, uid):
@@ -214,7 +215,12 @@ class CoTController:
 
                 if self.context.app.config.get("OTS_ENABLE_MESHTASTIC"):
                     try:
-                        eud = self.db.session.execute(select(EUD).filter_by(uid=uid)).first()[0]
+                        eud = self.db.session.execute(select(EUD).filter_by(uid=uid)).first()
+
+                        if not eud:
+                            return res.inserted_primary_key[0]
+
+                        eud = eud[0]
 
                         now = datetime.now(timezone.utc)
                         if eud.last_meshtastic_publish is None or (now - eud.last_meshtastic_publish.replace(tzinfo=timezone.utc)).total_seconds() >= self.context.app.config.get("OTS_MESHTASTIC_PUBLISH_INTERVAL"):
@@ -583,7 +589,7 @@ class CoTController:
                         if 'argb' in tag.attrs:
                             marker.argb = tag.attrs['argb']
                             marker.color_hex = marker.color_to_hex()
-                        if 'callsign' in tag.attrs:
+                        if tag.name == "contact":
                             marker.callsign = tag.attrs['callsign']
                         if 'iconsetpath' in tag.attrs:
                             marker.iconset_path = tag.attrs['iconsetpath']
@@ -667,7 +673,8 @@ class CoTController:
                         rb_line.range = tag.attrs['value']
                     if tag.name == 'bearing':
                         rb_line.bearing = tag.attrs['value']
-                    if tag.name == 'inclination':
+                    # Sometimes ATAK sends NaN for the inclination which causes issues in the DB
+                    if tag.name == 'inclination' and tag.attrs['value'].isnumeric():
                         rb_line.inclination = tag.attrs['value']
                     if tag.name == 'anchorUID':
                         rb_line.anchor_uid = tag.attrs['value']
@@ -744,102 +751,6 @@ class CoTController:
                 self.db.session.add(eud_stats)
                 self.db.session.commit()
 
-    def rabbitmq_routing(self, event, data):
-        # RabbitMQ Routing
-        chat = event.find("__chat")
-        destinations = event.find_all('dest')
-
-        if chat and 'chatroom' in chat.attrs and chat.attrs['chatroom'] == 'All Chat Rooms':
-            self.rabbit_channel.basic_publish(exchange='chatrooms', routing_key='All Chat Rooms', body=json.dumps(data))
-
-        elif destinations:
-            for destination in destinations:
-                uid = None
-                # ATAK and WinTAK use callsign, iTAK uses uid
-                if 'callsign' in destination.attrs and destination.attrs['callsign']:
-                    self.rabbit_channel.basic_publish(exchange='dms', routing_key=destination.attrs['callsign'], body=json.dumps(data))
-                    self.logger.warning(f"Routing cot to {destination.attrs['callsign']}")
-                elif 'uid' in destination.attrs:
-                    self.logger.warning(f"Routing cot to {destination.attrs['uid']}")
-                    self.rabbit_channel.basic_publish(exchange='dms', routing_key=destination.attrs['uid'], body=json.dumps(data))
-                # For data sync missions
-                elif 'mission' in destination.attrs:
-                    with self.context:
-                        mission = self.db.session.execute(
-                            self.db.session.query(Mission).filter_by(name=destination.attrs['mission'])).first()
-
-                        if not mission:
-                            self.logger.error(f"No such mission found: {destination.attrs['mission']}")
-                            return
-
-                        mission = mission[0]
-                        self.rabbit_channel.basic_publish("missions",
-                                                          routing_key=f"missions.{destination.attrs['mission']}",
-                                                          body=json.dumps(data))
-
-                        mission_uid = self.db.session.execute(
-                            self.db.session.query(MissionUID).filter_by(uid=event.attrs['uid'])).first()
-
-                        if not mission_uid:
-                            mission_uid = MissionUID()
-                            mission_uid.uid = event.attrs['uid']
-                            mission_uid.mission_name = destination.attrs['mission']
-                            mission_uid.timestamp = datetime_from_iso8601_string(event.attrs['start'])
-                            mission_uid.creator_uid = uid
-                            mission_uid.cot_type = event.attrs['type']
-
-                            color = event.find('color')
-                            icon = event.find('usericon')
-                            point = event.find('point')
-                            contact = event.find('contact')
-
-                            if color and 'argb' in color.attrs:
-                                mission_uid.color = color.attrs['argb']
-                            elif color and 'value' in color.attrs:
-                                mission_uid.color = color.attrs['value']
-                            if icon:
-                                mission_uid.iconset_path = icon['iconsetpath']
-                            if point:
-                                mission_uid.latitude = float(point.attrs['lat'])
-                                mission_uid.longitude = float(point.attrs['lon'])
-                            if contact:
-                                mission_uid.callsign = contact.attrs['callsign']
-
-                            try:
-                                self.db.session.add(mission_uid)
-                                self.db.session.commit()
-                            except sqlalchemy.exc.IntegrityError:
-                                self.db.session.rollback()
-                                self.db.session.execute(update(MissionUID).values(**mission_uid.serialize()))
-
-                            mission_change = MissionChange()
-                            mission_change.isFederatedChange = False
-                            mission_change.change_type = MissionChange.ADD_CONTENT
-                            mission_change.mission_name = destination.attrs['mission']
-                            mission_change.timestamp = datetime_from_iso8601_string(event.attrs['start'])
-                            mission_change.creator_uid = data['uid']
-                            mission_change.server_time = datetime_from_iso8601_string(event.attrs['start'])
-                            mission_change.mission_uid = event.attrs['uid']
-
-                            change_pk = self.db.session.execute(insert(MissionChange).values(**mission_change.serialize()))
-                            self.db.session.commit()
-
-                            body = {'uid': uid, 'cot': tostring(
-                                generate_mission_change_cot(destination.attrs['mission'], mission, mission_change,
-                                                            cot_event=event)).decode('utf-8')}
-                            self.rabbit_channel.basic_publish("missions", routing_key=f"missions.{mission.name}",
-                                                              body=json.dumps(body))
-
-        # If no destination or callsign is specified, broadcast to all TAK clients
-        elif self.rabbit_channel and self.rabbit_channel.is_open:
-            self.rabbit_channel.basic_publish(exchange='cot', routing_key="", body=json.dumps(data),
-                                              properties=pika.BasicProperties(
-                                                  expiration=self.context.app.config.get("OTS_RABBITMQ_TTL")))
-
-        # Do nothing because the RabbitMQ channel hasn't opened yet or has closed
-        else:
-            self.logger.debug("Not publishing, channel closed")
-
     def publish_to_meshtastic(self, body):
         for channel in self.get_meshtastic_channels():
             body.channel_id = channel
@@ -859,7 +770,7 @@ class CoTController:
                     downlink_channels.append(channel.name)
             return downlink_channels
 
-    def on_message(self, unused_channel, basic_deliver, properties, body):
+    def on_message(self, channel: pika.channel.Channel, basic_deliver: pika.spec.Basic.Deliver, properties: pika.spec.BasicProperties, body: bytes):
         try:
             start = time.time()
             body = json.loads(body)
@@ -881,7 +792,6 @@ class CoTController:
                 self.parse_rbline(event, uid, point_pk, cot_pk)
                 self.parse_stats(event, uid)
                 self.rabbit_channel.basic_ack(delivery_tag=basic_deliver.delivery_tag)
-                self.rabbitmq_routing(event, body)
 
                 # EUD went offline
                 if event.attrs['type'] == 't-x-d-d':
@@ -971,6 +881,10 @@ def create_app():
 
 app = create_app()
 child_processes = []
+
+@app.route("/status")
+def status():
+    return jsonify({"status": "ok"})
 
 
 def main():

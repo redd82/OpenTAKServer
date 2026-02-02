@@ -2,6 +2,7 @@ import io
 import os
 import random
 import re
+import shutil
 import subprocess
 import traceback
 import uuid
@@ -97,6 +98,8 @@ class CertificateAuthority:
 
             self.logger.debug(command)
 
+            exit_code = subprocess.call(command, shell=True)
+
             if exit_code:
                 raise Exception("Failed to create crl. Exit code {}".format(exit_code))
 
@@ -113,7 +116,7 @@ class CertificateAuthority:
             raise FileNotFoundError("ca.pem not found")
 
         if os.path.exists(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", common_name)):
-            raise Exception("There is already a certificate for {}".format(common_name))
+            shutil.rmtree(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", common_name))
 
         os.makedirs(os.path.join(self.app.config.get("OTS_CA_FOLDER"), "certs", common_name))
 
@@ -202,7 +205,7 @@ class CertificateAuthority:
         f.close()
 
         if server:
-            if re.match(r"^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$", common_name):
+            if re.match("^[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}$", common_name):
                 alt_name_field = "IP.1"
             else:
                 alt_name_field = "DNS.1"

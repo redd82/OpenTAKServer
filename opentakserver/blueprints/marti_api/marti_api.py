@@ -4,7 +4,9 @@ import traceback
 from urllib.parse import urlparse, unquote
 
 from OpenSSL import crypto
+from OpenSSL.crypto import X509
 from flask import request, Blueprint, current_app as app, jsonify, send_from_directory
+from flask_babel import gettext
 from flask_security import current_user
 from simplekml import Kml, GxTrack, IconStyle, Icon, Style, GxMultiTrack, Document
 
@@ -19,7 +21,7 @@ marti_api = Blueprint('marti_api', __name__)
 
 # Verifies the client cert forwarded by nginx in the X-Ssl-Cert header
 # Returns the parsed cert if valid, otherwise returns False
-def verify_client_cert():
+def verify_client_cert() -> X509 | bool:
     cert_header = app.config.get("OTS_SSL_CERT_HEADER")
     if cert_header not in request.headers:
         return False
@@ -47,7 +49,7 @@ def client_end_points():
     return_value = {'version': 3, "type": "com.bbn.marti.remote.ClientEndpoint", 'data': [],
                     'nodeId': app.config.get("OTS_NODE_ID")}
     for eud in euds:
-        if not eud.callsign:
+        if not eud.callsign or not eud.last_event_time:
             continue
 
         return_value['data'].append({
@@ -87,7 +89,7 @@ def atak_track_history():
 
         eud = db.session.execute(db.session.query(EUD).filter_by(uid=uid)).first()
         if not eud:
-            return jsonify({'success': False, 'error': f"No such UID: {uid}"}), 400
+            return jsonify({'success': False, 'error': gettext("No such UID: %(uid)s", uid=uid)}), 400
         eud: EUD = eud[0]
 
         icon = Icon(href=f"files/team_{eud.team.name.lower().replace(' ', '')}.png")

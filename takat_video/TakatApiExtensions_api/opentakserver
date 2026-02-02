@@ -1,0 +1,1 @@
+takusr ALL=NOPASSWD: /bin/systemctl restart cot_parser.service, /bin/systemctl restart eud_handler.service

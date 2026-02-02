@@ -1,17 +1,21 @@
+import shutil
 import bleach
 import os
 import datetime
 import hashlib
 import traceback
 import threading
-import time
+import time, requests, jwt
 import subprocess
 from shutil import copyfile
 import sqlalchemy.exc
 from sqlalchemy import select, delete
 
-from flask import current_app as app, request, Blueprint, jsonify
-from flask_security import roles_required
+from OpenSSL import crypto
+from OpenSSL.crypto import X509StoreFlags
+
+from flask import current_app as app, request, Blueprint, jsonify, abort
+from flask_security import roles_required, roles_accepted
 from flask_security.decorators import auth_required
 from flask_login import current_user
 
@@ -22,8 +26,56 @@ from opentakserver.models.user import User
 from opentakserver.models.DataPackage import DataPackage
 from opentakserver.models.Certificate import Certificate
 from opentakserver.blueprints.TakatApiExtensions_api.certificate_authority import CertificateAuthority
+from opentakserver.blueprints.TakatInterApi_interface.defaultPluginConfig import DefaultPluginConfig
+from opentakserver.blueprints.TakatInterApi_interface.jwt_auth import verify_token
+from opentakserver.blueprints.TakatInterApi_interface.jwt_auth import require_scope
 
 api_blueprint = Blueprint('takat_api_blueprint', __name__)
+
+def _revoke_certificate(common_name: str) -> None:
+    cert_path = os.path.join(app.config["OTS_CA_FOLDER"], "certs", common_name, f"{common_name}.pem")
+    if not os.path.exists(cert_path):
+        logger.warning("No certificate on disk for %s; skipping revoke", common_name)
+        return
+
+    ca = CertificateAuthority(logger, app)
+    try:
+        subprocess.run(
+            [
+                "openssl", "ca",
+                "-config", os.path.join(app.config["OTS_CA_FOLDER"], "ca_config.cfg"),
+                "-revoke", cert_path,
+                "-passin", f"pass:{app.config['OTS_CA_PASSWORD']}"
+            ],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                "openssl", "ca",
+                "-config", os.path.join(app.config["OTS_CA_FOLDER"], "ca_config.cfg"),
+                "-gencrl",
+                "-passin", f"pass:{app.config['OTS_CA_PASSWORD']}",
+                "-out", os.path.join(app.config["OTS_CA_FOLDER"], "ca.crl")
+            ],
+            check=True,
+            capture_output=True,
+        )
+        logger.info("Revoked certificate for %s", common_name)
+    except subprocess.CalledProcessError as exc:
+        logger.error("Failed to revoke %s: %s", common_name, exc.stderr.decode().strip())
+        raise
+
+def _revoke_and_cleanup_certificate(cert: Certificate) -> None:
+    _revoke_certificate(cert.common_name)
+    if cert.data_package:
+        db.session.delete(cert.data_package)
+    db.session.delete(cert)
+    db.session.commit()
+    shutil.rmtree(
+        os.path.join(app.config["OTS_CA_FOLDER"], "certs", cert.common_name),
+        ignore_errors=True
+    )
 
 def _restart_service(name: str, delay: float = 1.0) -> None:
     def _runner():
@@ -62,18 +114,6 @@ def restart_service_eud():
     _restart_service("eud_handler.service")
     return {"success": True, "message": "Restart eud services queued"}, 202
 
-@api_blueprint.route("/api/system/gethashadmin", methods=["GET"])
-@roles_required("administrator")
-def gethashadmin():
-    security = app.extensions.get("security")
-    if not security:
-        return {"success": False, "error": "Security extension unavailable"}, 500
-    user = security.datastore.find_user(username="administrator")
-    if not user:
-        return {"success": False, "error": "Administrator user not found"}, 404
-    hashed = user.password
-    return {"success": True, "hash": hashed}, 200
-
 @api_blueprint.route('/api/usereuds', methods=['POST'])
 @auth_required()
 def get_usereuds():
@@ -86,6 +126,7 @@ def get_usereuds():
 
     if username:
         query = query.join(User, User.id == EUD.user_id)
+        #query = query.join(User)
         query = query.filter(User.username == username)
     
     query = search(query, EUD, 'callsign')
@@ -265,3 +306,16 @@ def certificate():
         query = search(query, Certificate, 'username')
 
         return paginate(query)
+    
+# test routes for checking if the flow is correctly implemented
+@api_blueprint.route('/api/statusTest')
+@require_scope("ots:status:test1")
+def statusTest():
+    """Server status used on the Dashboard page of the web UI
+    :rtype: dict
+    """
+    response = {
+        'test' : "success"
+    }
+
+    return jsonify(response)

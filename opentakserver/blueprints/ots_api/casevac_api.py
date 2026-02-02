@@ -4,12 +4,13 @@ from uuid import UUID
 import pika
 import sqlalchemy.exc
 from flask import Blueprint, request, jsonify
-from flask_security import auth_required
+from flask_babel import gettext
+from flask_security import auth_required, current_user
 from sqlalchemy import insert, update
 
 from werkzeug.datastructures import ImmutableMultiDict
 
-from opentakserver.blueprints.ots_api.api import search, paginate
+from opentakserver.blueprints.ots_api.api import search, paginate, route_cot
 from opentakserver.extensions import db, logger, socketio
 from opentakserver.forms.casevac_form import CasEvacForm
 from opentakserver.forms.zmist_form import ZmistForm
@@ -105,11 +106,13 @@ def add_casevac():
         db.session.commit()
         logger.debug(f"Updated CasEvac {casevac.uid}")
 
-    rabbit_connection = pika.BlockingConnection(
-        pika.ConnectionParameters(app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")))
+    rabbit_credentials = pika.PlainCredentials(app.config.get("OTS_RABBITMQ_USERNAME"), app.config.get("OTS_RABBITMQ_PASSWORD"))
+    rabbit_host = app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")
+    rabbit_connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbit_host, credentials=rabbit_credentials))
     channel = rabbit_connection.channel()
     channel.basic_publish(exchange='cot', routing_key='', body=json.dumps({'cot': cot.xml, 'uid': app.config['OTS_NODE_ID']}),
                           properties=pika.BasicProperties(expiration=app.config.get("OTS_RABBITMQ_TTL")))
+    route_cot(cot.xml, current_user)
     channel.close()
     rabbit_connection.close()
 
@@ -135,7 +138,7 @@ def delete_casevac():
     query = search(query, CasEvac, 'uid')
     casevac = db.session.execute(query).first()
     if not casevac:
-        return jsonify({'success': False, 'error': f'Unknown UID: {uid}'}), 404
+        return jsonify({'success': False, 'error': gettext(u'Unknown UID: %(uid)s', uid=uid)}), 404
 
     casevac = casevac[0]
 
@@ -151,12 +154,14 @@ def delete_casevac():
     SubElement(detail, '_flow-tags_',
                {'TAK-Server-f1a8159ef7804f7a8a32d8efc4b773d0': iso8601_string_from_datetime(now)})
 
-    rabbit_connection = pika.BlockingConnection(
-        pika.ConnectionParameters(app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")))
+    rabbit_credentials = pika.PlainCredentials(app.config.get("OTS_RABBITMQ_USERNAME"), app.config.get("OTS_RABBITMQ_PASSWORD"))
+    rabbit_host = app.config.get("OTS_RABBITMQ_SERVER_ADDRESS")
+    rabbit_connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbit_host, credentials=rabbit_credentials))
     channel = rabbit_connection.channel()
     channel.basic_publish(exchange='cot', routing_key='', body=json.dumps(
         {'cot': tostring(event).decode('utf-8'), 'uid': app.config['OTS_NODE_ID']}),
                           properties=pika.BasicProperties(expiration=app.config.get("OTS_RABBITMQ_TTL")))
+    route_cot(tostring(event).decode('utf-8'), current_user)
     channel.close()
     rabbit_connection.close()
 

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from flask_security.models import fsqla_v3 as fsqla
-from opentakserver.extensions import db, logger
+from opentakserver.extensions import db
 
 
 @dataclass
@@ -14,3 +14,6 @@ class Role(db.Model, fsqla.FsRoleMixin):
             'permissions': self.permissions,
             'update_timestamp': self.update_datetime,
         }
+
+    def __eq__(self, other):
+        return self.name == other or self.name == getattr(other, "name", None)
